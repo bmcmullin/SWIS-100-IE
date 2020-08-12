@@ -1,0 +1,80 @@
+technology,year,parameter,value,unit,source
+default,2020,discount rate,0.05,per unit,mature market Germany had WACC 4% nominal 2% real in 2018 https://www.ise.fraunhofer.de/content/dam/ise/de/documents/publications/studies/DE2018_ISE_Studie_Stromgestehungskosten_Erneuerbare_Energien.pdf assume all markets become mature eventually
+default,2030,discount rate,0.03,per unit,mature market Germany had WACC 4% nominal 2% real in 2018 https://www.ise.fraunhofer.de/content/dam/ise/de/documents/publications/studies/DE2018_ISE_Studie_Stromgestehungskosten_Erneuerbare_Energien.pdf assume all markets become mature eventually
+default,2050,discount rate,0.025,per unit,mature market Germany had WACC 4% nominal 2% real in 2018 https://www.ise.fraunhofer.de/content/dam/ise/de/documents/publications/studies/DE2018_ISE_Studie_Stromgestehungskosten_Erneuerbare_Energien.pdf assume all markets become mature eventually
+default,2020,lifetime,25,years,
+default,2030,lifetime,25,years,
+default,2050,lifetime,25,years,
+default,2020,FOM,3,%/year,
+default,2030,FOM,3,%/year,
+default,2050,FOM,3,%/year,
+utility solar PV,2020,investment,750,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+utility solar PV,2030,investment,600,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+utility solar PV,2050,investment,425,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+utility solar PV,2020,lifetime,25,years,IEA2010
+utility solar PV,2030,lifetime,25,years,IEA2010
+utility solar PV,2050,lifetime,25,years,IEA2010
+offshore wind,2020,investment,2742,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+offshore wind,2030,investment,2506,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+offshore wind,2050,investment,2093,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+offshore wind,2020,lifetime,25,years,https://deepresource.wordpress.com/2017/01/07/offshore-wind-life-expectancy/
+offshore wind,2030,lifetime,25,years,https://deepresource.wordpress.com/2017/01/07/offshore-wind-life-expectancy/
+offshore wind,2050,lifetime,25,years,https://deepresource.wordpress.com/2017/01/07/offshore-wind-life-expectancy/
+onshore wind,2020,investment,1240,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+onshore wind,2030,investment,1182,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+onshore wind,2050,investment,1075,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+onshore wind,2020,lifetime,25,years,IEA2010
+onshore wind,2030,lifetime,25,years,IEA2010
+onshore wind,2050,lifetime,25,years,IEA2010
+H2 electrolysis default,2020,investment,1000,EUR/kWel,PEM with RD&D extrapolated from https://doi.org/10.1016/j.ijhydene.2017.10.045
+H2 electrolysis default,2030,investment,750,EUR/kWel,PEM with RD&D extrapolated from https://doi.org/10.1016/j.ijhydene.2017.10.045
+H2 electrolysis default,2050,investment,500,EUR/kWel,extrapolated - ESYS http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf has 260 EUR/kWel
+H2 electrolysis Nicola-NEL,2020,investment,350,USD/kWel,Nicola-NEL June 2020 https://nikolamotor.com/press_releases/nikola-orders-enough-electrolysis-equipment-from-nel-to-produce-40000-kgs-of-hydrogen-per-day-79
+H2 electrolysis Nicola-NEL,2030,investment,350,USD/kWel,Nicola-NEL June 2020 https://nikolamotor.com/press_releases/nikola-orders-enough-electrolysis-equipment-from-nel-to-produce-40000-kgs-of-hydrogen-per-day-79
+H2 electrolysis Nicola-NEL,2050,investment,350,USD/kWel,Nicola-NEL June 2020 https://nikolamotor.com/press_releases/nikola-orders-enough-electrolysis-equipment-from-nel-to-produce-40000-kgs-of-hydrogen-per-day-79
+H2 electrolysis,2020,lifetime,18,years,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
+H2 electrolysis,2030,lifetime,20,years,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
+H2 electrolysis,2050,lifetime,20,years,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
+H2 electrolysis,2020,efficiency,0.75,per unit,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
+H2 electrolysis,2030,efficiency,0.8,per unit,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
+H2 electrolysis,2050,efficiency,0.8,per unit,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
+H2 CCGT,2020,investment,800,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+H2 CCGT,2030,investment,800,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+H2 CCGT,2050,investment,800,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
+H2 CCGT,2020,efficiency,0.6,per unit,
+H2 CCGT,2030,efficiency,0.6,per unit,
+H2 CCGT,2050,efficiency,0.6,per unit,
+H2 salt cavern storage,2020,investment,0.024,USD/kWh,solution mined minimum from https://www.nrel.gov/docs/fy10osti/46719.pdf (0.02 $2008 -> $2020 via https://www.usinflationcalculator.com/)
+H2 salt cavern storage,2030,investment,0.024,USD/kWh,solution mined minimum from https://www.nrel.gov/docs/fy10osti/46719.pdf (0.02 $2008 -> $2020 via https://www.usinflationcalculator.com/)
+H2 salt cavern storage,2050,investment,0.024,USD/kWh,solution mined minimum from https://www.nrel.gov/docs/fy10osti/46719.pdf (0.02 $2008 -> $2020 via https://www.usinflationcalculator.com/)
+H2 salt cavern storage,2020,lifetime,40,years,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf [To be confirmed applicable for salt cavern?]
+H2 salt cavern storage,2030,lifetime,40,years,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf [To be confirmed applicable for salt cavern?]
+H2 salt cavern storage,2050,lifetime,40,years,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf [To be confirmed applicable for salt cavern?]
+H2 rock cavern storage,2020,investment,0.58,USD/kWh,maximum from https://www.nrel.gov/docs/fy10osti/46719.pdf (0.49 $2008 -> $2020 via https://www.usinflationcalculator.com/) 
+H2 rock cavern storage,2030,investment,0.58,USD/kWh,maximum from https://www.nrel.gov/docs/fy10osti/46719.pdf (0.49 $2008 -> $2020 via https://www.usinflationcalculator.com/)
+H2 rock cavern storage,2050,investment,0.58,USD/kWh,maximum from https://www.nrel.gov/docs/fy10osti/46719.pdf (0.49 $2008 -> $2020 via https://www.usinflationcalculator.com/)
+H2 rock cavern storage,2020,lifetime,40,years,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
+H2 rock cavern storage,2030,lifetime,40,years,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
+H2 rock cavern storage,2050,lifetime,40,years,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
+H2 steel tank storage,2020,investment,11,EUR/kWh,http://dx.doi.org/10.1016/j.rser.2014.10.011
+H2 steel tank storage,2030,investment,11,EUR/kWh,http://dx.doi.org/10.1016/j.rser.2014.10.011
+H2 steel tank storage,2050,investment,11,EUR/kWh,http://dx.doi.org/10.1016/j.rser.2014.10.011
+H2 steel tank storage,2020,lifetime,30,years, no source given in WHOBS?
+H2 steel tank storage,2030,lifetime,30,years, no source given in WHOBS?
+H2 steel tank storage,2050,lifetime,30,years, no source given in WHOBS?
+battery inverter,2020,investment,600,USD/kW,extrapolated from http://dx.doi.org/10.1016/j.jpowsour.2012.09.054
+battery inverter,2030,investment,400,USD/kW,extrapolated from http://dx.doi.org/10.1016/j.jpowsour.2012.09.054
+battery inverter,2050,investment,200,USD/kW,extrapolated from http://dx.doi.org/10.1016/j.jpowsour.2012.09.054
+battery inverter,2020,efficiency,0.9,per unit,http://dx.doi.org/10.1016/j.jpowsour.2012.09.054
+battery inverter,2030,efficiency,0.9,per unit,http://dx.doi.org/10.1016/j.jpowsour.2012.09.054
+battery inverter,2050,efficiency,0.9,per unit,http://dx.doi.org/10.1016/j.jpowsour.2012.09.054
+battery storage,2020,investment,300,USD/kWh,extrapolated from http://dx.doi.org/10.1016/j.jpowsour.2012.09.054 consistent with https://doi.org/10.1038/nclimate2564
+battery storage,2030,investment,200,USD/kWh,extrapolated from http://dx.doi.org/10.1016/j.jpowsour.2012.09.054 consistent with https://doi.org/10.1038/nclimate2564
+battery storage,2050,investment,150,USD/kWh,extrapolated from http://dx.doi.org/10.1016/j.jpowsour.2012.09.054 consistent with https://doi.org/10.1038/nclimate2564
+interconnector,2020,investment,1140,EUR/kW,based on IE-EWIC 500MW @ €570M (2012) https://www.cru.ie/wp-content/uploads/2012/07/cer12149.pdf pg 8 
+interconnector,2030,investment,1140,EUR/kW,based on IE-EWIC 500MW @ €570M (2012) https://www.cru.ie/wp-content/uploads/2012/07/cer12149.pdf pg 8
+interconnector,2050,investment,1140,EUR/kW,based on IE-EWIC 500MW @ €570M (2012) https://www.cru.ie/wp-content/uploads/2012/07/cer12149.pdf pg 8
+interconnector,2020,efficiency,0.94,per unit,based on IE-EWIC losses of 30MW at rated (500MW) power http://www.eirgrid.ie/site-files/library/EirGrid/EWIC_IEI%20Presentation%2029.04.10.ppt.pdf
+interconnector,2030,efficiency,0.94,per unit,based on IE-EWIC losses of 30MW at rated (500MW) power http://www.eirgrid.ie/site-files/library/EirGrid/EWIC_IEI%20Presentation%2029.04.10.ppt.pdf
+interconnector,2050,efficiency,0.94,per unit,based on IE-EWIC losses of 30MW at rated (500MW) power http://www.eirgrid.ie/site-files/library/EirGrid/EWIC_IEI%20Presentation%2029.04.10.ppt.pdf
+
