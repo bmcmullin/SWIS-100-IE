@@ -38,12 +38,18 @@ H2 electrolysis,2050,lifetime,20,years,http://www.acatech.de/fileadmin/user_uplo
 H2 electrolysis,2020,efficiency,0.75,per unit,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
 H2 electrolysis,2030,efficiency,0.8,per unit,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
 H2 electrolysis,2050,efficiency,0.8,per unit,http://www.acatech.de/fileadmin/user_upload/Baumstruktur_nach_Website/Acatech/root/de/Publikationen/Materialien/ESYS_Technologiesteckbrief_Energiespeicher.pdf
-H2 CCGT,2020,investment,800,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
-H2 CCGT,2030,investment,800,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
-H2 CCGT,2050,investment,800,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348
-H2 CCGT,2020,efficiency,0.6,per unit,
-H2 CCGT,2030,efficiency,0.6,per unit,
-H2 CCGT,2050,efficiency,0.6,per unit,
+H2 CCGT,2020,investment,800,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 CCGT,2030,investment,800,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 CCGT,2050,investment,800,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 CCGT,2020,efficiency,0.6,per unit,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 CCGT,2030,efficiency,0.6,per unit,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 CCGT,2050,efficiency,0.6,per unit,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 OCGT,2020,investment,400,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 OCGT,2030,investment,400,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 OCGT,2050,investment,400,EUR/kWel,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 OCGT,2020,efficiency,0.3,per unit,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 OCGT,2030,efficiency,0.3,per unit,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
+H2 OCGT,2050,efficiency,0.3,per unit,DIW DataDoc http://hdl.handle.net/10419/80348 p.41 para 1
 H2 salt cavern storage,2020,investment,0.024,USD/kWh,solution mined minimum from https://www.nrel.gov/docs/fy10osti/46719.pdf (0.02 $2008 -> $2020 via https://www.usinflationcalculator.com/)
 H2 salt cavern storage,2030,investment,0.024,USD/kWh,solution mined minimum from https://www.nrel.gov/docs/fy10osti/46719.pdf (0.02 $2008 -> $2020 via https://www.usinflationcalculator.com/)
 H2 salt cavern storage,2050,investment,0.024,USD/kWh,solution mined minimum from https://www.nrel.gov/docs/fy10osti/46719.pdf (0.02 $2008 -> $2020 via https://www.usinflationcalculator.com/)
