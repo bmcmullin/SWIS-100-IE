@@ -1,42 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # SWIS-100-IE
-# ## Notionally Optimal, 100% Solar+Wind+Interconnection+Storage Electricity System for Ireland (IE)
-# 
-# - **Project:** [OESM-IE](http://ecrn.eeng.dcu.ie/projects/oesm-ie)
-# - **Funding:** [Sustainable Energy Authority of Ireland (SEAI) Research, Development and Demonstration Programme](https://www.seai.ie/grants/research-funding/research-development-and-demonstration-fund/), award reference SEAI RDD/00246 2018.
-# - **Author:** Barry McMullin, barry.mcmullin@dcu.ie
-# - **Last modified:** 16 Nov 2020
-# - **© 2020:** [Dublin City University](http://www.dcu.ie/)
-# - **Licence:** [GNU GENERAL PUBLIC LICENSE Version 3](https://www.gnu.org/licenses/gpl-3.0.en.html)
-# 
-# This is a derived from: [Optimal Wind+Hydrogen+Other+Battery+Solar (WHOBS) electricity systems for European countries](https://github.com/PyPSA/WHOBS)
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# ## Introduction/motivation
-# 
-# The original [WHOBS](https://github.com/PyPSA/WHOBS) package, and the associated interactive web application [model.energy](https://model.energy/), allows modelling of notionally optimised "firm" electricity generation for a given level of (constant/"baseload") capacity, based exclusively on *variable* renewable (VRE: here limited to wind and solar) sources, coupled with hydrogen and/or battery storage (to cover "when the wind doesn't blow and the sun doesn't shine"). Wind and solar resource variability is configured for states within Europe using historical data from [Renewables.ninja](https://www.renewables.ninja/) ([model.energy](https://model.energy/) extends this coverage to global geographical locations using other data sources).
-# 
-# **SWIS-100-IE** adapts WHOBS to model delivery of **100%** of electricity demand from VRE only for one particular European country (**Ireland**), based on [historical load data](http://www.eirgridgroup.com/how-the-grid-works/renewables/) from the [Irish Transmission System Operator (TSO) eirgrid](http://www.eirgridgroup.com/).
-# 
-# This allows illustration and exploration of the (rough) trade-off between:
-# 
-# - Raw VRE *overprovision* (building more VRE capacity than can be directly dispatched at all times, but meaning that more demand can be covered directly by instantaneous VRE generations)
-# - Dispatch down (discarding some generation when it is in excess of instantaneous load)
-# - Storage (storing some generation when it is in excess of instantaneous load)
-#     - Short term, high efficiency storage: battery
-#     - Long term, low efficiency storage: hydrogen
-# - Interconnection with a larger, external, grid: here modelled (simplistically) as a single, aggregated, fixed power capacity link to an indefinitely large external energy storage (effectively it is assumed that a larger external grid will facilitate temporal buffering from the point of view of the local system, in a manner analogous to local storage, constrained only by the power capacity and efficiency of the interconnector(s) themselves). 
-# 
-
-# ## Enhancements over WHOBS?
-# 
-# + Added (crude) representation of external interconnection
-# + Added more flexible options on temporal resolution - not just 1 or 3 hours, but arbitrary number of hours
-# + Added/refactored mechanism for flexibly setting options for a particular model run, capturing the summary results, and accumulating the information on these runs in two data structures, `run_configs` and `ru_stats`.
-# + Instead of H2 underground vs steel tank storage being mutually exclusive, both are made available for deployment unconditionally, but user can (optionally) set `e_extendable_max` limits on each separately (which could potentially be based, even if loosely, on actual available geology, such as salt caverns in NI).
-# + Similarly, H2 overall is available for deployment unconditionally: but obviously if both storage options are set to zero capacity, no actual H2 electrolysis or electricity generation will actually be provisioned.
-# + Added H2-OCGT as an alternative to H2-CCGT
 
 import pypsa
 
@@ -84,6 +52,8 @@ idx = pd.IndexSlice
 # **Validate/calibrate?** Would be good to calibrate/compare the (normalised) *wind* availability projected from the renewables ninja data with the actual recorded availability in the eirgrid data, for those years where both are available!
 # 
 
+logger.info("Loading solar and wind variability timeseries data (renewables.ninja)")
+
 #rninja_base_url = "https://www.renewables.ninja/static/downloads/"
 r_ninja_base_url = 'ninja/' # Actually already downloaded...
 
@@ -128,6 +98,7 @@ wind_pu_raw = pd.read_csv(wind_csv_url,
 # If file already available locally, can point at that; otherwise use the web url
 # (i.e. uncomment one or the other of the following two statements).
 
+logger.info("Loading electricity demand timeseries data (eirgrid)")
 #eirgrid_base_url = "http://www.eirgridgroup.com/site-files/library/EirGrid/"
 eirgrid_base_url = "eirgrid/"
 

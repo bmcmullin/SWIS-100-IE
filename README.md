@@ -16,6 +16,7 @@ This package is derived from: [Optimal
 Wind+Hydrogen+Other+Battery+Solar (WHOBS) electricity systems for
 European countries](https://github.com/PyPSA/WHOBS)
 
+
 ## Motivation
 
 The pre-existing [WHOBS](https://github.com/PyPSA/WHOBS) model,
@@ -35,8 +36,10 @@ historical data from
 global geographical locations using other data sources).
 
 **SWIS-100-IE** adapts WHOBS to model delivery of **100%** of
-electricity demand from VRE only for one particular European
-country (the **Republic of Ireland**), based on [historical load
+electricity demand from VRE only for the synchronous grid serving
+the island of Ireland (incorporating the **Republic of
+Ireland** and **Northern Ireland**, a devolved nation of the
+United Kingdom), based on [historical load
 data](http://www.eirgridgroup.com/how-the-grid-works/renewables/)
 from the [Irish Transmission System Operator (TSO)
 eirgrid](http://www.eirgridgroup.com/).
@@ -61,6 +64,27 @@ This allows illustration and exploration of the (rough) trade-off between:
   constrained only by the power capacity and efficiency of the
   interconnector(s) themselves).
 
+## Enhancements over WHOBS?
+
++ Added (crude) representation of external interconnection
++ Added more flexible options on temporal resolution - not just 1
+  or 3 hours, but arbitrary number of hours
++ Added/refactored mechanism for flexibly setting options for a
+  particular model run, capturing the summary results, and
+  accumulating the information on these runs in two data
+  structures, `run_configs` and `ru_stats`.
++ Instead of H2 underground vs steel tank storage being mutually
+  exclusive, both are made available for deployment
+  unconditionally, but user can (optionally) set
+  `e_extendable_max` limits on each separately (which could
+  potentially be based, even if loosely, on actual available
+  geology, such as salt caverns in NI).
++ Similarly, H2 overall is available for deployment
+  unconditionally: but obviously if both storage options are set
+  to zero capacity, no actual H2 electrolysis or electricity
+  generation will actually be provisioned.
++ Added H2-OCGT as an alternative to H2-CCGT
+
 # Licence
 
 Unless indicated otherwise, all code in this repository is
@@ -75,3 +99,7 @@ This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 [GNU General Public License](LICENSE.txt) for more details.
+
+
+
+
