@@ -83,4 +83,10 @@ interconnector,2050,investment,1140,EUR/kW,based on IE-EWIC 500MW @ €570M (201
 interconnector,2020,efficiency,0.94,per unit,based on IE-EWIC losses of 30MW at rated (500MW) power http://www.eirgrid.ie/site-files/library/EirGrid/EWIC_IEI%20Presentation%2029.04.10.ppt.pdf
 interconnector,2030,efficiency,0.94,per unit,based on IE-EWIC losses of 30MW at rated (500MW) power http://www.eirgrid.ie/site-files/library/EirGrid/EWIC_IEI%20Presentation%2029.04.10.ppt.pdf
 interconnector,2050,efficiency,0.94,per unit,based on IE-EWIC losses of 30MW at rated (500MW) power http://www.eirgrid.ie/site-files/library/EirGrid/EWIC_IEI%20Presentation%2029.04.10.ppt.pdf
+Nuclear SMR,2020,investment,5250,EUR/kW,18-for-0 study 2020
+Nuclear SMR,2030,investment,2970,EUR/kW,18-for-0 study 2020
+Nuclear SMR,2050,investment,2640,EUR/kW,18-for-0 study 2020
+Nuclear SMR,2020,lifetime,60,years,18-for-0 study 2020
+Nuclear SMR,2030,lifetime,60,years,18-for-0 study 2020
+Nuclear SMR,2050,lifetime,60,years,18-for-0 study 2020
 

@@ -284,6 +284,14 @@ def solve_network(run_configs, r_id):
                 bus="local-elec-grid",
                 p_set= load)
 
+    network.add("Generator","nuclear-SMR",
+                bus="local-elec-grid",
+                p_nom_extendable = True,
+                p_nom_max = run_configs.at['nuclear_SMR_max_p (GW)', r_id]*1e3, #GW -> MW
+                marginal_cost = 1.0, # €/MWh FIXME!! 
+                capital_cost = assumptions.at['Nuclear SMR','fixed'],
+               )
+
     # Set very small VRE marginal cost to prefer curtailment to destroying energy in storage
     # (not sure of the rationale?).
     solar_marginal_cost = run_configs.loc['solar_marginal_cost',r_id] # €/MWh
@@ -298,7 +306,6 @@ def solve_network(run_configs, r_id):
                 marginal_cost = solar_marginal_cost, 
                 #Small cost to prefer curtailment to destroying energy in storage
                 capital_cost = assumptions.at['utility solar PV','fixed'],
-                #p_nom_max = 0.0
                )
 
     network.add("Generator","onshore wind",
@@ -516,10 +523,16 @@ def gather_run_stats(run_configs,run_stats,r_id,network):
     snapshot_interval = run_configs.at['snapshot_interval',r_id]
 
     max_load_p = network.loads_t.p.sum(axis='columns').max()
-    #mean_load_p = network.loads_t.p.mean().sum() # DEFUNCT? Delete after test... ;-)
     mean_load_p = network.loads_t.p.sum(axis='columns').mean()
     min_load_p = network.loads_t.p.sum(axis='columns').min()
-    
+
+    for g in network.generators.index :
+        if (not(g in network.generators_t.p_max_pu.columns)) :
+            # network.generators_t.p_max_pu undefined for gens with static p_max_pu
+            # but we want to do generic calculations for *all* generators using this
+            # so add it in for any such generators...
+            network.generators_t.p_max_pu[g] = network.generators.at[g,'p_max_pu']
+   
     total_load_e = (network.loads_t.p.sum().sum() * snapshot_interval)
     available_e = (network.generators_t.p_max_pu.multiply(network.generators.p_nom_opt).sum() 
         * snapshot_interval)
@@ -546,7 +559,7 @@ def gather_run_stats(run_configs,run_stats,r_id,network):
 
     total_hours = network.snapshot_weightings.sum()
     
-    gens = ["offshore wind", "onshore wind", "solar"]
+    gens = ["nuclear-SMR","offshore wind", "onshore wind", "solar"]
     for g in gens:
         g_idx =  g
         run_stats.at[g+" capacity nom (GW)",r_id] = (
