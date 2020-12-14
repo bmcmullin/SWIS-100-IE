@@ -513,7 +513,7 @@ def solve_network(run_configs, r_id):
 
 
 def gather_run_stats(run_configs,run_stats,r_id,network):
-    
+
     # FIXME: Add a sanity check that there are no snapshots where *both* electrolysis and 
     # H2 to power (whether CCGT or OCGT) are simultaneously dispatched!? (Unless there is
     # some conceivable circumstance in which it makes sense to take power over the interconnector
@@ -528,8 +528,8 @@ def gather_run_stats(run_configs,run_stats,r_id,network):
 
     for g in network.generators.index :
         if (not(g in network.generators_t.p_max_pu.columns)) :
-            # network.generators_t.p_max_pu undefined for gens with static p_max_pu
-            # but we want to do generic calculations for *all* generators using this
+            # network.generators_t.p_max_pu is not defined for gens with static p_max_pu
+            # but we want to do various generic calculations for *all* generators using this
             # so add it in for any such generators...
             network.generators_t.p_max_pu[g] = network.generators.at[g,'p_max_pu']
    
@@ -558,9 +558,12 @@ def gather_run_stats(run_configs,run_stats,r_id,network):
         # "net" of dispatch down
 
     total_hours = network.snapshot_weightings.sum()
-    
-    gens = ["nuclear-SMR","offshore wind", "onshore wind", "solar"]
-    for g in gens:
+
+    # FIXME: add calculation of "min" LCOE for all gens (based on 100% capacity running)
+    # Note that this doesn't depend on lopf() results - it is statically determined by
+    # fixed and marginal costs of each gen.
+
+    for g in network.generators.index :
         g_idx =  g
         run_stats.at[g+" capacity nom (GW)",r_id] = (
             network.generators.p_nom_opt[g_idx]/1.0e3)

@@ -83,10 +83,15 @@ interconnector,2050,investment,1140,EUR/kW,based on IE-EWIC 500MW @ €570M (201
 interconnector,2020,efficiency,0.94,per unit,based on IE-EWIC losses of 30MW at rated (500MW) power http://www.eirgrid.ie/site-files/library/EirGrid/EWIC_IEI%20Presentation%2029.04.10.ppt.pdf
 interconnector,2030,efficiency,0.94,per unit,based on IE-EWIC losses of 30MW at rated (500MW) power http://www.eirgrid.ie/site-files/library/EirGrid/EWIC_IEI%20Presentation%2029.04.10.ppt.pdf
 interconnector,2050,efficiency,0.94,per unit,based on IE-EWIC losses of 30MW at rated (500MW) power http://www.eirgrid.ie/site-files/library/EirGrid/EWIC_IEI%20Presentation%2029.04.10.ppt.pdf
-Nuclear SMR,2020,investment,5250,EUR/kW,18-for-0 study 2020
-Nuclear SMR,2030,investment,2970,EUR/kW,18-for-0 study 2020
-Nuclear SMR,2050,investment,2640,EUR/kW,18-for-0 study 2020
 Nuclear SMR,2020,lifetime,60,years,18-for-0 study 2020
 Nuclear SMR,2030,lifetime,60,years,18-for-0 study 2020
 Nuclear SMR,2050,lifetime,60,years,18-for-0 study 2020
-
+Nuclear SMR,2020,discount rate,0.087,per unit,18-for-0 study 2020 (WACC 8.7%-10%: but arguably too high for system-wide/society-wide analysis)
+Nuclear SMR,2030,discount rate,0.087,per unit,18-for-0 study 2020 (WACC 8.7%-10%: but arguably too high for system-wide/society-wide analysis)
+Nuclear SMR,2050,discount rate,0.087,per unit,18-for-0 study 2020 (WACC 8.7%-10%: but arguably too high for system-wide/society-wide analysis)
+Nuclear SMR,2020,investment,5250,EUR/kW,18-for-0 study 2020
+Nuclear SMR,2030,investment,2970,EUR/kW,18-for-0 study 2020
+Nuclear SMR,2050,investment,2640,EUR/kW,18-for-0 study 2020
+Nuclear SMR,2020,FOM,0.61,%/year,18-for-0 study 2020 €32 FOM vs €5250/kW investment - but need variable (fuel) costs also?
+Nuclear SMR,2030,FOM,1.08,%/year,18-for-0 study 2020 €32 FOM vs €2970/kW investment - but need variable (fuel) costs also?
+Nuclear SMR,2050,FOM,1.21,%/year,18-for-0 study 2020 €32 FOM vs €2640/kW investment - but need variable (fuel) costs also?
