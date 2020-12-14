@@ -246,7 +246,7 @@ def solve_network(run_configs, r_id):
     # of this resampling and leap-day filtering: vague memory of seeing that at some point. 
     # But don't currently have a test case demonstrating this... caveat modeller
     
-    # Could just skip sampling by (instead) uncommenting:
+    # Could just skip resampling by (instead) uncommenting:
     #solar_pu = solar_pu_raw
     #wind_pu = wind_pu_raw
 
@@ -287,8 +287,9 @@ def solve_network(run_configs, r_id):
     network.add("Generator","nuclear-SMR",
                 bus="local-elec-grid",
                 p_nom_extendable = True,
+                p_nom_min = run_configs.at['nuclear_SMR_min_p (GW)', r_id]*1e3, #GW -> MW
                 p_nom_max = run_configs.at['nuclear_SMR_max_p (GW)', r_id]*1e3, #GW -> MW
-                marginal_cost = 1.0, # €/MWh FIXME!! 
+                marginal_cost = 1.0, # €/MWh FIXME!! This should probably come via "assumptions"?
                 capital_cost = assumptions.at['Nuclear SMR','fixed'],
                )
 
@@ -302,6 +303,7 @@ def solve_network(run_configs, r_id):
                 bus="local-elec-grid",
                 p_max_pu = solar_pu["IE"], # Hardwired choice of IE location for renewables.ninja
                 p_nom_extendable = True,
+                p_nom_min = run_configs.at['solar_min_p (GW)', r_id]*1e3, #GW -> MW
                 p_nom_max = run_configs.at['solar_max_p (GW)', r_id]*1e3, #GW -> MW
                 marginal_cost = solar_marginal_cost, 
                 #Small cost to prefer curtailment to destroying energy in storage
@@ -314,6 +316,7 @@ def solve_network(run_configs, r_id):
                     # Hardwired choice of IE location for renewables.ninja
                     # "_ON" codes for "onshore" in renewables.ninja wind data
                 p_nom_extendable = True,
+                p_nom_min = run_configs.at['onshore_wind_min_p (GW)', r_id]*1e3, #GW -> MW
                 p_nom_max = run_configs.at['onshore_wind_max_p (GW)', r_id]*1e3, #GW -> MW
                 marginal_cost = onshore_wind_marginal_cost, 
                 #Small cost to prefer curtailment to destroying energy in storage, wind curtails before solar
@@ -325,6 +328,7 @@ def solve_network(run_configs, r_id):
                     # Hardwired choice of IE location for renewables.ninja
                     # "_OFF" codes for "onshore" in renewables.ninja wind data
                 p_nom_extendable = True,
+                p_nom_min = run_configs.at['offshore_wind_min_p (GW)', r_id]*1e3, #GW -> MW
                 p_nom_max = run_configs.at['offshore_wind_max_p (GW)', r_id]*1e3, #GW -> MW
                 marginal_cost = offshore_wind_marginal_cost, 
                 #Small cost to prefer curtailment to destroying energy in storage, wind curtails before solar
@@ -364,6 +368,7 @@ def solve_network(run_configs, r_id):
                 bus1 = "remote-elec-grid",
                 efficiency = assumptions.at['interconnector','efficiency'],
                 p_nom_extendable = True,
+                p_nom_min = run_configs.at['IC_min_p (GW)', r_id]*1e3, # GW -> MW
                 p_nom_max = run_configs.at['IC_max_p (GW)', r_id]*1e3, # GW -> MW
                 capital_cost=assumptions.at['interconnector','fixed']*0.8
                  # Capital cost shared somewhat with remote-elec-grid operator(s)
