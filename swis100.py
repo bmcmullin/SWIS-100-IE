@@ -208,31 +208,31 @@ def prepare_assumptions(src="assumptions.csv",Nyears=1,usd_to_eur=1/1.2,assumpti
 
     return assumptions
 
-def solve_network(run_configs, r_id):
+def solve_network(run_config):
 
-    snapshot_interval = int(run_configs.loc['snapshot_interval',r_id])
-    use_pyomo = bool(run_configs.loc['use_pyomo',r_id])
-    solver_name = bool(run_configs.loc['solver_name',r_id])
-    Nyears = int(run_configs.loc['Nyears',r_id])
+    snapshot_interval = int(run_config.loc['snapshot_interval'])
+    use_pyomo = bool(run_config.loc['use_pyomo'])
+    solver_name = bool(run_config.loc['solver_name'])
+    Nyears = int(run_config.loc['Nyears'])
 
     # Available year(s) for weather data: solar 1985-2015 inclusive, wind 1980-2016
-    weather_year_start = int(run_configs.loc['weather_year_start',r_id])
+    weather_year_start = int(run_config.loc['weather_year_start'])
     assert(weather_year_start >= 1985)
     weather_year_end = weather_year_start + (Nyears - 1)
     assert(weather_year_end <= 2015)
 
-    if (run_configs.loc['constant_load_flag',r_id]) :
-        load = run_configs.loc['constant_load (GW)',r_id]*1.0e3 # GW -> MW
+    if (run_config.loc['constant_load_flag']) :
+        load = run_config.loc['constant_load (GW)']*1.0e3 # GW -> MW
     else :
         # Available year(s) for eirgrid load data: 2014-2019 inclusive
-        load_year_start = int(run_configs.loc['load_year_start',r_id])
+        load_year_start = int(run_config.loc['load_year_start'])
         assert(load_year_start >= 2014)
         load_year_end = load_year_start + (Nyears - 1)
         assert(load_year_end <= 2019)
 
         load_date_start = "{}-01-01 00:00".format(load_year_start)
         load_date_end = "{}-12-31 23:59".format(load_year_end)
-        load_scope = run_configs.loc['load_scope',r_id]
+        load_scope = run_config.loc['load_scope']
         load = load_data_raw.loc[load_date_start:load_date_end, load_scope]
         load = load.resample(str(snapshot_interval)+"H").mean()
 
@@ -251,12 +251,12 @@ def solve_network(run_configs, r_id):
     #wind_pu = wind_pu_raw
 
     
-    assumptions_src = run_configs.loc['assumptions_src',r_id]
-    assumptions_year = int(run_configs.loc['assumptions_year',r_id])
+    assumptions_src = run_config.loc['assumptions_src']
+    assumptions_year = int(run_config.loc['assumptions_year'])
     assert (assumptions_year in [2020, 2030, 2050])
     assumptions = prepare_assumptions(src=assumptions_src,Nyears=Nyears,
                                       assumptions_year=assumptions_year,
-                                      usd_to_eur=run_configs.loc['usd_to_eur',r_id])
+                                      usd_to_eur=run_config.loc['usd_to_eur'])
 
     network = pypsa.Network()
 
@@ -265,7 +265,7 @@ def solve_network(run_configs, r_id):
                               freq=str(snapshot_interval)+"H").to_frame()
 
     snapshots = snaps_df[~((snaps_df.index.month == 2) & (snaps_df.index.day == 29))].index
-    if (not run_configs.loc['constant_load_flag',r_id]) :
+    if (not run_config.loc['constant_load_flag']) :
         load = load[~((load.index.month == 2) & (load.index.day == 29))]
         # Kludge to filter out "leap days" (29th Feb in any year)
         # https://stackoverflow.com/questions/34966422/remove-leap-year-day-from-pandas-dataframe
@@ -287,24 +287,24 @@ def solve_network(run_configs, r_id):
     network.add("Generator","nuclear-SMR",
                 bus="local-elec-grid",
                 p_nom_extendable = True,
-                p_nom_min = run_configs.at['nuclear_SMR_min_p (GW)', r_id]*1e3, #GW -> MW
-                p_nom_max = run_configs.at['nuclear_SMR_max_p (GW)', r_id]*1e3, #GW -> MW
+                p_nom_min = run_config['nuclear_SMR_min_p (GW)']*1e3, #GW -> MW
+                p_nom_max = run_config['nuclear_SMR_max_p (GW)']*1e3, #GW -> MW
                 marginal_cost = 1.0, # €/MWh FIXME!! This should probably come via "assumptions"?
                 capital_cost = assumptions.at['Nuclear SMR','fixed'],
                )
 
     # Set very small VRE marginal cost to prefer curtailment to destroying energy in storage
     # (not sure of the rationale?).
-    solar_marginal_cost = run_configs.loc['solar_marginal_cost',r_id] # €/MWh
-    onshore_wind_marginal_cost = run_configs.loc['onshore_wind_marginal_cost',r_id] # €/MWh
-    offshore_wind_marginal_cost = run_configs.loc['offshore_wind_marginal_cost',r_id]  # €/MWh
+    solar_marginal_cost = run_config.loc['solar_marginal_cost'] # €/MWh
+    onshore_wind_marginal_cost = run_config.loc['onshore_wind_marginal_cost'] # €/MWh
+    offshore_wind_marginal_cost = run_config.loc['offshore_wind_marginal_cost']  # €/MWh
        
     network.add("Generator","solar",
                 bus="local-elec-grid",
                 p_max_pu = solar_pu["IE"], # Hardwired choice of IE location for renewables.ninja
                 p_nom_extendable = True,
-                p_nom_min = run_configs.at['solar_min_p (GW)', r_id]*1e3, #GW -> MW
-                p_nom_max = run_configs.at['solar_max_p (GW)', r_id]*1e3, #GW -> MW
+                p_nom_min = run_config['solar_min_p (GW)']*1e3, #GW -> MW
+                p_nom_max = run_config['solar_max_p (GW)']*1e3, #GW -> MW
                 marginal_cost = solar_marginal_cost, 
                 #Small cost to prefer curtailment to destroying energy in storage
                 capital_cost = assumptions.at['utility solar PV','fixed'],
@@ -316,8 +316,8 @@ def solve_network(run_configs, r_id):
                     # Hardwired choice of IE location for renewables.ninja
                     # "_ON" codes for "onshore" in renewables.ninja wind data
                 p_nom_extendable = True,
-                p_nom_min = run_configs.at['onshore_wind_min_p (GW)', r_id]*1e3, #GW -> MW
-                p_nom_max = run_configs.at['onshore_wind_max_p (GW)', r_id]*1e3, #GW -> MW
+                p_nom_min = run_config['onshore_wind_min_p (GW)']*1e3, #GW -> MW
+                p_nom_max = run_config['onshore_wind_max_p (GW)']*1e3, #GW -> MW
                 marginal_cost = onshore_wind_marginal_cost, 
                 #Small cost to prefer curtailment to destroying energy in storage, wind curtails before solar
                 capital_cost = assumptions.at['onshore wind','fixed'])
@@ -328,8 +328,8 @@ def solve_network(run_configs, r_id):
                     # Hardwired choice of IE location for renewables.ninja
                     # "_OFF" codes for "onshore" in renewables.ninja wind data
                 p_nom_extendable = True,
-                p_nom_min = run_configs.at['offshore_wind_min_p (GW)', r_id]*1e3, #GW -> MW
-                p_nom_max = run_configs.at['offshore_wind_max_p (GW)', r_id]*1e3, #GW -> MW
+                p_nom_min = run_config['offshore_wind_min_p (GW)']*1e3, #GW -> MW
+                p_nom_max = run_config['offshore_wind_max_p (GW)']*1e3, #GW -> MW
                 marginal_cost = offshore_wind_marginal_cost, 
                 #Small cost to prefer curtailment to destroying energy in storage, wind curtails before solar
                 capital_cost = assumptions.at['offshore wind','fixed'])
@@ -353,7 +353,7 @@ def solve_network(run_configs, r_id):
     network.add("Store","remote-elec-grid-buffer",
                 bus = "remote-elec-grid",
                 e_nom_extendable = True,
-                e_nom_max = run_configs.loc['IC_max_e (TWh)',r_id]*1.0e6, 
+                e_nom_max = run_config.loc['IC_max_e (TWh)']*1.0e6, 
                          # TWh -> MWh
                 e_cyclic=True,
                 capital_cost=0.0) # Assume no local cost for existence of arbitrarily large ext grid
@@ -368,8 +368,8 @@ def solve_network(run_configs, r_id):
                 bus1 = "remote-elec-grid",
                 efficiency = assumptions.at['interconnector','efficiency'],
                 p_nom_extendable = True,
-                p_nom_min = run_configs.at['IC_min_p (GW)', r_id]*1e3, # GW -> MW
-                p_nom_max = run_configs.at['IC_max_p (GW)', r_id]*1e3, # GW -> MW
+                p_nom_min = run_config['IC_min_p (GW)']*1e3, # GW -> MW
+                p_nom_max = run_config['IC_max_p (GW)']*1e3, # GW -> MW
                 capital_cost=assumptions.at['interconnector','fixed']*0.8
                  # Capital cost shared somewhat with remote-elec-grid operator(s)
                 )
@@ -389,7 +389,7 @@ def solve_network(run_configs, r_id):
     network.add("Store","battery storage",
                 bus = "battery",
                 e_nom_extendable = True,
-                e_nom_max = run_configs.loc['Battery_max_e (MWh)',r_id],
+                e_nom_max = run_config.loc['Battery_max_e (MWh)'],
                 e_cyclic=True,
                 capital_cost=assumptions.at['battery storage','fixed'])
 
@@ -402,7 +402,7 @@ def solve_network(run_configs, r_id):
                 bus1 = "battery",
                 efficiency = assumptions.at['battery inverter','efficiency'],
                 p_nom_extendable = True,
-                p_nom_max = run_configs.at['Battery_max_p (MW)', r_id],
+                p_nom_max = run_config['Battery_max_p (MW)'],
                 capital_cost=assumptions.at['battery inverter','fixed'])
 
     network.add("Link","battery discharge",
@@ -417,14 +417,14 @@ def solve_network(run_configs, r_id):
     network.add("Bus", "H2",
                      carrier="H2")
 
-    h2_electrolysis_tech = 'H2 electrolysis ' + run_configs.loc['H2_electrolysis_tech',r_id]
+    h2_electrolysis_tech = 'H2 electrolysis ' + run_config.loc['H2_electrolysis_tech']
 
     network.add("Link",
                     "H2 electrolysis",
                     bus1="H2",
                     bus0="local-elec-grid",
                     p_nom_extendable=True,
-                    p_nom_max = run_configs.at['H2_electrolysis_max_p (GW)', r_id]*1e3, # GW -> MW
+                    p_nom_max = run_config['H2_electrolysis_max_p (GW)']*1e3, # GW -> MW
                     efficiency=assumptions.at["H2 electrolysis","efficiency"],
                     capital_cost=assumptions.at[h2_electrolysis_tech,"fixed"])
 
@@ -433,7 +433,7 @@ def solve_network(run_configs, r_id):
                      bus0="H2",
                      bus1="local-elec-grid",
                      p_nom_extendable=True,
-                     p_nom_max = run_configs.at['H2_CCGT_max_p (GW)', r_id]*1e3, # GW -> MW
+                     p_nom_max = run_config['H2_CCGT_max_p (GW)']*1e3, # GW -> MW
                      efficiency=assumptions.at["H2 CCGT","efficiency"],
                      capital_cost=assumptions.at["H2 CCGT","fixed"]*assumptions.at["H2 CCGT","efficiency"])  
                      #NB: fixed (capital) cost for H2 CCGT in assumptions is per MWel (p1 of link)
@@ -443,18 +443,18 @@ def solve_network(run_configs, r_id):
                      bus0="H2",
                      bus1="local-elec-grid",
                      p_nom_extendable=True,
-                     p_nom_max = run_configs.at['H2_OCGT_max_p (GW)', r_id]*1e3, # GW -> MW
+                     p_nom_max = run_config['H2_OCGT_max_p (GW)']*1e3, # GW -> MW
                      efficiency=assumptions.at["H2 OCGT","efficiency"],
                      capital_cost=assumptions.at["H2 OCGT","fixed"]*assumptions.at["H2 OCGT","efficiency"])  
                      #NB: fixed (capital) cost for H2 CCGT in assumptions is per MWel (p1 of link)
 
-    h2_storage_tech = 'H2 ' + run_configs.loc['H2_storage_tech',r_id] + ' storage'
+    h2_storage_tech = 'H2 ' + run_config.loc['H2_storage_tech'] + ' storage'
 
     network.add("Store",
                      "H2 store",
                      bus="H2",
                      e_nom_extendable=True,
-                     e_nom_max = run_configs.loc['H2_store_max_e (TWh)',r_id]*1.0e6,
+                     e_nom_max = run_config.loc['H2_store_max_e (TWh)']*1.0e6,
                          # TWh -> MWh
                      e_cyclic=True,
                      capital_cost=assumptions.at[h2_storage_tech,"fixed"])
@@ -509,7 +509,7 @@ def solve_network(run_configs, r_id):
 
     network.consistency_check()
 
-    network.lopf(solver_name=run_configs.loc['solver_name',r_id],
+    network.lopf(solver_name=run_config.loc['solver_name'],
                  solver_options=solver_options,
                  pyomo=use_pyomo,
                  extra_functionality=extra_functionality)
@@ -517,15 +517,17 @@ def solve_network(run_configs, r_id):
     return network
 
 
-def gather_run_stats(run_configs,run_stats,r_id,network):
+def gather_run_stats(run_config, network, run_stats):
 
     # FIXME: Add a sanity check that there are no snapshots where *both* electrolysis and 
     # H2 to power (whether CCGT or OCGT) are simultaneously dispatched!? (Unless there is
     # some conceivable circumstance in which it makes sense to take power over the interconnector
     # for electrolysis??) Of course, if we adding ramping constraints the situation would be 
     # quite different...
-    
-    snapshot_interval = run_configs.at['snapshot_interval',r_id]
+
+    run_stats['id'] = run_config['id']
+
+    snapshot_interval = run_config['snapshot_interval']
 
     max_load_p = network.loads_t.p.sum(axis='columns').max()
     mean_load_p = network.loads_t.p.sum(axis='columns').mean()
@@ -548,18 +550,18 @@ def gather_run_stats(run_configs,run_stats,r_id,network):
     total_undispatched_e = undispatched_e.sum()
     undispatched_frac = undispatched_e/available_e
     
-    run_stats.at["System total load (TWh)",r_id] = total_load_e/1.0e6
-    run_stats.at["System mean load (GW)",r_id] = mean_load_p/1.0e3
+    run_stats["System total load (TWh)"] = total_load_e/1.0e6
+    run_stats["System mean load (GW)"] = mean_load_p/1.0e3
 
-    run_stats.at["System available (TWh)",r_id] = total_available_e/1.0e6
-    run_stats.at["System efficiency gross (%)",r_id] = (total_load_e/total_available_e)*100.0
+    run_stats["System available (TWh)"] = total_available_e/1.0e6
+    run_stats["System efficiency gross (%)"] = (total_load_e/total_available_e)*100.0
         # "gross" includes dispatch down
-    run_stats.at["System dispatched (TWh)",r_id] = total_dispatched_e/1.0e6
-    run_stats.at["System dispatched down (TWh)",r_id] = total_undispatched_e/1.0e6
-    run_stats.at["System dispatched down (%)",r_id] = (total_undispatched_e/total_available_e)*100.0
-    run_stats.at["System storage loss (TWh)",r_id] = (total_dispatched_e-total_load_e)/1.0e6
+    run_stats["System dispatched (TWh)"] = total_dispatched_e/1.0e6
+    run_stats["System dispatched down (TWh)"] = total_undispatched_e/1.0e6
+    run_stats["System dispatched down (%)"] = (total_undispatched_e/total_available_e)*100.0
+    run_stats["System storage loss (TWh)"] = (total_dispatched_e-total_load_e)/1.0e6
 
-    run_stats.at["System efficiency net (%)",r_id] = (total_load_e/total_dispatched_e)*100.0
+    run_stats["System efficiency net (%)"] = (total_load_e/total_dispatched_e)*100.0
         # "net" of dispatch down
 
     total_hours = network.snapshot_weightings.sum()
@@ -570,49 +572,49 @@ def gather_run_stats(run_configs,run_stats,r_id,network):
 
     for g in network.generators.index :
         g_idx =  g
-        run_stats.at[g+" capacity nom (GW)",r_id] = (
+        run_stats[g+" capacity nom (GW)"] = (
             network.generators.p_nom_opt[g_idx]/1.0e3)
-        run_stats.at[g+" available (TWh)",r_id] = available_e[g_idx]/1.0e6
-        run_stats.at[g+" dispatched (TWh)",r_id] = dispatched_e[g_idx]/1.0e6
-        run_stats.at[g+" penetration (%)",r_id] = (dispatched_e[g_idx]/total_dispatched_e)*100.0 
-        run_stats.at[g+" dispatched down (TWh)",r_id] = (undispatched_e[g_idx])/1.0e6
-        run_stats.at[g+" dispatched down (%)",r_id] = (undispatched_frac[g_idx])*100.0
-        run_stats.at[g+" capacity factor max (%)",r_id] = (
+        run_stats[g+" available (TWh)"] = available_e[g_idx]/1.0e6
+        run_stats[g+" dispatched (TWh)"] = dispatched_e[g_idx]/1.0e6
+        run_stats[g+" penetration (%)"] = (dispatched_e[g_idx]/total_dispatched_e)*100.0 
+        run_stats[g+" dispatched down (TWh)"] = (undispatched_e[g_idx])/1.0e6
+        run_stats[g+" dispatched down (%)"] = (undispatched_frac[g_idx])*100.0
+        run_stats[g+" capacity factor max (%)"] = (
             network.generators_t.p_max_pu[g_idx].mean())*100.0
-        run_stats.at[g+" capacity factor act (%)",r_id] = (
+        run_stats[g+" capacity factor act (%)"] = (
             dispatched_e[g_idx]/(network.generators.p_nom_opt[g_idx]*total_hours))*100.0
         
     links_e0 = network.links_t.p0.sum() * snapshot_interval
     links_e1 = network.links_t.p1.sum() * snapshot_interval
 
     ic_p = network.links.p_nom_opt["ic-export"]
-    run_stats.at["IC power (GW)",r_id] = ic_p/1.0e3
+    run_stats["IC power (GW)"] = ic_p/1.0e3
         # NB: interconnector export and import p_nom are constrained to be equal
         # (at the input side of the respective links)
     ic_total_e = links_e0["ic-export"] - links_e1["ic-import"] # On IE grid side
-    run_stats.at["IC transferred (TWh)",r_id] = ic_total_e/1.0e6
-    run_stats.at["IC capacity factor (%)",r_id] = ic_total_e/(
+    run_stats["IC transferred (TWh)"] = ic_total_e/1.0e6
+    run_stats["IC capacity factor (%)"] = ic_total_e/(
         network.links.p_nom_opt["ic-export"]*total_hours)*100.0
     remote_elec_grid_e = network.stores.e_nom_opt["remote-elec-grid-buffer"]
-    run_stats.at["remote-elec-grid 'store' (TWh)",r_id] = remote_elec_grid_e/1.0e6
+    run_stats["remote-elec-grid 'store' (TWh)"] = remote_elec_grid_e/1.0e6
     remote_elec_grid_h = remote_elec_grid_e/ic_p
-    run_stats.at["remote-elec-grid 'store' time (h)",r_id] = remote_elec_grid_h
-    run_stats.at["remote-elec-grid 'store' time (d)",r_id] = remote_elec_grid_h/24.0
+    run_stats["remote-elec-grid 'store' time (h)"] = remote_elec_grid_h
+    run_stats["remote-elec-grid 'store' time (d)"] = remote_elec_grid_h/24.0
 
     # Battery "expected" to be "relatively" small so we represent stats as MW (power) or MWh (energy)
     battery_charge_p = network.links.p_nom_opt["battery charge"]
-    run_stats.at["Battery charge/discharge capacity nom (MW)",r_id] = battery_charge_p
+    run_stats["Battery charge/discharge capacity nom (MW)"] = battery_charge_p
         # NB: battery charge and discharge p_nom are constrained to be equal (grid side)
     battery_total_e = links_e0["battery charge"] - links_e1["battery discharge"] # on grid side
-    run_stats.at["Battery transferred (GWh)",r_id] = battery_total_e/1.0e3
-    run_stats.at["Battery capacity factor (%)",r_id] = (battery_total_e/(
+    run_stats["Battery transferred (GWh)"] = battery_total_e/1.0e3
+    run_stats["Battery capacity factor (%)"] = (battery_total_e/(
         network.links.p_nom_opt["battery charge"]*total_hours))*100.0
     battery_store_e = network.stores.e_nom_opt["battery storage"]
-    run_stats.at["Battery store (MWh)",r_id] = battery_store_e
+    run_stats["Battery store (MWh)"] = battery_store_e
     battery_discharge_p = network.links.p_nom_opt["battery discharge"]
     battery_store_h = battery_store_e/battery_discharge_p
-    run_stats.at["Battery store time (h)",r_id] = battery_store_h
-    #run_stats.at["Battery storage time (d)",r_id] = battery_store_h/24.0
+    run_stats["Battery store time (h)"] = battery_store_h
+    #run_stats["Battery storage time (d)"] = battery_store_h/24.0
 
     # P2H and H2P represent separate plant with separate capacity factors (0-100%); albeit, with 
     # no independent H2 load on the H2 bus, the sum of their respective capacity factors still 
@@ -621,27 +623,27 @@ def gather_run_stats(run_configs,run_stats,r_id,network):
     links = ["H2 electrolysis", "H2 OCGT", "H2 CCGT"]
     for l in links:
         l_idx =  l
-        run_stats.at[l+" i/p capacity nom (GW)",r_id] = (network.links.p_nom_opt[l_idx]/1.0e3)
-        run_stats.at[l+" o/p capacity nom (GW)",r_id] = (
+        run_stats[l+" i/p capacity nom (GW)"] = (network.links.p_nom_opt[l_idx]/1.0e3)
+        run_stats[l+" o/p capacity nom (GW)"] = (
             (network.links.p_nom_opt[l_idx]*network.links.efficiency[l_idx])/1.0e3)
-        run_stats.at[l+" capacity factor (%)",r_id] = (
+        run_stats[l+" capacity factor (%)"] = (
             links_e0[l_idx]/(network.links.p_nom_opt[l_idx]*total_hours))*100.0
 
     p2h2p_total_e = links_e0["H2 electrolysis"] - (links_e1["H2 OCGT"]+links_e1["H2 CCGT"]) 
                                                    # OCGT, CCGT both on grid side (e1)
-    run_stats.at["P2H2P transferred (TWh)",r_id] = p2h2p_total_e/1.0e6    
+    run_stats["P2H2P transferred (TWh)"] = p2h2p_total_e/1.0e6    
     h2_store_e = network.stores.e_nom_opt["H2 store"]
-    run_stats.at["H2 store (TWh)",r_id] = (h2_store_e/1.0e6)
+    run_stats["H2 store (TWh)"] = (h2_store_e/1.0e6)
     h2_store_CCGT_p = network.links.p_nom_opt["H2 CCGT"]
     h2_store_CCGT_h = h2_store_e/h2_store_CCGT_p
-    run_stats.at["H2 store time (CCGT, h)",r_id] = h2_store_CCGT_h 
-    run_stats.at["H2 store time (CCGT, d)",r_id] = h2_store_CCGT_h/24.0
+    run_stats["H2 store time (CCGT, h)"] = h2_store_CCGT_h 
+    run_stats["H2 store time (CCGT, d)"] = h2_store_CCGT_h/24.0
     h2_store_OCGT_p = network.links.p_nom_opt["H2 OCGT"]
     h2_store_OCGT_h = h2_store_e/h2_store_OCGT_p
-    run_stats.at["H2 store time (OCGT, h)",r_id] = h2_store_OCGT_h 
-    run_stats.at["H2 store time (OCGT, d)",r_id] = h2_store_OCGT_h/24.0
+    run_stats["H2 store time (OCGT, h)"] = h2_store_OCGT_h 
+    run_stats["H2 store time (OCGT, d)"] = h2_store_OCGT_h/24.0
 
-    run_stats.at["System total raw store I+B+H2 (TWh)",r_id] = (
+    run_stats["System total raw store I+B+H2 (TWh)"] = (
         h2_store_e+battery_store_e+remote_elec_grid_e)/1.0e6
     
     # Do a somewhat crude/ad hoc calculation of how much electricity can be generated
@@ -657,16 +659,16 @@ def gather_run_stats(run_configs,run_stats,r_id,network):
                     (battery_store_e*network.links.at["battery discharge","efficiency"]) +
                     (remote_elec_grid_e*network.links.at["ic-import","efficiency"]))
     
-    run_stats.at["System total usable store I+B+H2 (TWh)",r_id] = total_avail_store_gen/1.0e6
+    run_stats["System total usable store I+B+H2 (TWh)"] = total_avail_store_gen/1.0e6
     total_avail_store_gen_h = total_avail_store_gen/mean_load_p
-    run_stats.at["System total usable store/load (%) ",r_id] = (total_avail_store_gen/total_load_e)*100.0
-    run_stats.at["System total usable store time (h)",r_id] = total_avail_store_gen_h
-    run_stats.at["System total usable store time (d)",r_id] = total_avail_store_gen_h/24.0
+    run_stats["System total usable store/load (%) "] = (total_avail_store_gen/total_load_e)*100.0
+    run_stats["System total usable store time (h)"] = total_avail_store_gen_h
+    run_stats["System total usable store time (d)"] = total_avail_store_gen_h/24.0
                                                         
-    run_stats.at["System notional cost (B€)",r_id] = network.objective/1.0e9 # Scale (by Nyears) to p.a.?
-    run_stats.at["System notional LCOE (€/MWh)",r_id] = network.objective/total_load_e
+    run_stats["System notional cost (B€)"] = network.objective/1.0e9 # Scale (by Nyears) to p.a.?
+    run_stats["System notional LCOE (€/MWh)"] = network.objective/total_load_e
 
-    run_stats.at["Load weighted mean notional shadow price (€/MWh)",r_id] = (
+    run_stats["Load weighted mean notional shadow price (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.loads_t.p["local-elec-demand"]).sum() * snapshot_interval)
                               / total_load_e)
         # This uses the WHOBS approach, based on shadow price at the ct bus, but now
@@ -676,61 +678,61 @@ def gather_run_stats(run_configs,run_stats,r_id,network):
         # should equal the system notional LCOE as calculated above. But constraints may give rise to
         # localised "profit" in certain sub-systems. See discussion here:
         # https://groups.google.com/g/pypsa/c/xXHmChzd8o8
-    run_stats.at["Load max notional shadow price (€/MWh)",r_id] = (
+    run_stats["Load max notional shadow price (€/MWh)"] = (
         network.buses_t.marginal_price["local-elec-grid"].max())
-    run_stats.at["Load min notional shadow price (€/MWh)",r_id] = (
+    run_stats["Load min notional shadow price (€/MWh)"] = (
         network.buses_t.marginal_price["local-elec-grid"].min())
 
     # All the following are "weighted means"
-    run_stats.at["Offshore wind notional shadow cost (€/MWh)",r_id] = (
+    run_stats["Offshore wind notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.generators_t.p["offshore wind"]).sum())
                               / network.generators_t.p["offshore wind"].sum())
 
-    run_stats.at["Onshore wind notional shadow cost (€/MWh)",r_id] = (
+    run_stats["Onshore wind notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.generators_t.p["onshore wind"]).sum())
                               / network.generators_t.p["onshore wind"].sum())
 
-    run_stats.at["Solar notional shadow cost (€/MWh)",r_id] = (
+    run_stats["Solar notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.generators_t.p["solar"]).sum())
                               / network.generators_t.p["solar"].sum())
 
-    run_stats.at["Battery charge notional shadow cost (€/MWh)",r_id] = (
+    run_stats["Battery charge notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["battery charge"]).sum())
                               / network.links_t.p0["battery charge"].sum())
 
-    run_stats.at["Battery discharge notional shadow cost (€/MWh)",r_id] = (
+    run_stats["Battery discharge notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["battery discharge"]).sum())
                               / network.links_t.p1["battery discharge"].sum())
 
-    run_stats.at["IC export notional shadow cost (€/MWh)",r_id] = (
+    run_stats["IC export notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["ic-export"]).sum())
                               / network.links_t.p0["ic-export"].sum())
 
-    run_stats.at["IC import notional shadow cost (€/MWh)",r_id] = (
+    run_stats["IC import notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["ic-import"]).sum())
                               / network.links_t.p1["ic-import"].sum())
 
-    run_stats.at["Elec. for H2 notional shadow cost (€/MWh)",r_id] = (
+    run_stats["Elec. for H2 notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["H2 electrolysis"]).sum())
                               / network.links_t.p0["H2 electrolysis"].sum())
 
-    run_stats.at["H2 for CCGT notional shadow cost (€/MWh)",r_id] = (
+    run_stats["H2 for CCGT notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["H2"]*network.links_t.p0["H2 CCGT"]).sum())
                               / network.links_t.p0["H2 CCGT"].sum())
 
-    run_stats.at["Elec. from H2 CCGT notional shadow cost (€/MWh)",r_id] = (
+    run_stats["Elec. from H2 CCGT notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["H2 CCGT"]).sum())
                               / network.links_t.p1["H2 CCGT"].sum())
 
-    run_stats.at["H2 for OCGT notional shadow cost (€/MWh)",r_id] = (
+    run_stats["H2 for OCGT notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["H2"]*network.links_t.p0["H2 OCGT"]).sum())
                               / network.links_t.p0["H2 OCGT"].sum())
 
-    run_stats.at["Elec. from H2 OCGT notional shadow cost (€/MWh)",r_id] = (
+    run_stats["Elec. from H2 OCGT notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["H2 OCGT"]).sum())
                               / network.links_t.p1["H2 OCGT"].sum())
 
-    run_stats.at["H2 notional shadow cost (€/MWh)",r_id] = (
+    run_stats["H2 notional shadow cost (€/MWh)"] = (
         ((network.buses_t.marginal_price["H2"]*network.links_t.p1["H2 electrolysis"]).sum())
                               / network.links_t.p1["H2 electrolysis"].sum())
 
