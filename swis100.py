@@ -528,7 +528,7 @@ def gather_run_stats(run_config, network):
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore") # Blunt instrument!!
-        logger.info("NB: RuntimeWarnings suppressed (if any)")
+        logger.info("NB - RuntimeWarning(s) suppressed (if any)...")
 
         run_stats = pd.Series()
         snapshot_interval = run_config['snapshot_interval']
