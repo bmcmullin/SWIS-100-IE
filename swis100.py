@@ -25,6 +25,48 @@ def fmt_float(x) :
 pd.set_option('float_format', fmt_float)
 idx = pd.IndexSlice
 
+config_converters = {
+
+    # Utility mapping dict for stype casting when reading in spreadsheet configuration data.
+    # Arguably, this information should be put in the spreadsheet file and read from there
+    # as a preliminary step... but this works for the moment.
+
+    'use_pyomo' : bool,
+    'solver_name' : str,
+    'assumptions_src' : str,
+    'assumptions_year' : int,
+    'usd_to_eur' : float,
+    'constant_load_flag' : bool,
+    'load_year_start' : int,
+    'load_scope' : str,
+    'snapshot_interval' : int,
+    'nuclear_SMR_min_p (GW)' : float,
+    'nuclear_SMR_max_p (GW)' : float,
+    'weather_year_start' : int,
+    'Nyears' : int,
+    'solar_marginal_cost' : float,
+    'onshore_wind_marginal_cost' : float,
+    'offshore_wind_marginal_cost' : float,
+    'offshore_wind_min_p (GW)' : float,
+    'offshore_wind_max_p (GW)' : float,
+    'onshore_wind_min_p (GW)' : float,
+    'onshore_wind_max_p (GW)' : float,
+    'solar_min_p (GW)' : float,
+    'solar_max_p (GW)' : float,
+    'IC_min_p (GW)' : float,
+    'IC_max_p (GW)' : float,
+    'IC_max_e (TWh)' : float,
+    'Battery_max_p (MW)' : float,
+    'Battery_max_e (MWh)' : float,
+    'H2_electrolysis_tech' : str,
+    'H2_electrolysis_max_p (GW)' : float,
+    'H2_CCGT_max_p (GW)' : float,
+    'H2_OCGT_max_p (GW)' : float,
+    'H2_storage_tech' : str,
+    'H2_store_max_e (TWh)' : float
+}
+
+
 # ## Required data
 # 
 # ### Wind and solar resource variabilities
