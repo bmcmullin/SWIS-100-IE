@@ -28,7 +28,8 @@ def main(argv):
         usage()
     if (not os.path.isdir(batch_dir)) :
         usage()
-    if (not os.path.isfile(batch_dir+'/batch_config.ods')) :
+    batch_config_filename = batch_dir+'/batch_config.ods'
+    if (not os.path.isfile(batch_config_filename)) :
         logger.error('batch_config.ods not present in dir: '+batch_dir)
         usage()
 
@@ -36,8 +37,7 @@ def main(argv):
     import pandas as pd
     import swis100 as swis
 
-    batch_configs = pd.read_excel('runs/batch-run/test_configs.ods',
-                                  #dtype=object,
+    batch_configs = pd.read_excel(batch_config_filename,
                                   header=0,
                                   index_col=0,
                                   sheet_name='swis-config',
