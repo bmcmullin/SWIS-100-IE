@@ -36,7 +36,7 @@ config_converters = {
     'assumptions_src' : str,
     'assumptions_year' : int,
     'usd_to_eur' : float,
-    'constant_load_flag' : bool,
+    'constant_elec_load_flag' : bool,
     'load_year_start' : int,
     'load_scope' : str,
     'snapshot_interval' : int,
@@ -87,10 +87,20 @@ config_converters = {
 
 # ## Read in wind and solar variability data
 # 
-# **TODO:** Ideally, recode this to check for local copy, and, if not available, automatically download 
-# and extract the required .csv from the .zip in each case; but for the moment, just assume there is are local copies of the .csv files already available.
+# **TODO:** Ideally, recode this to check for local copy, and, if
+# not available, automatically download and extract the required
+# .csv from the .zip in each case; but for the moment, just
+# assume there is are local copies of the .csv files already
+# available.
 # 
-# **Alternative approach?** An alterative to using renewables ninja (specifically for wind) would be to extract the variability data (of actual wind generation) from historical eirgrid data. This would reflect the performance of the IE wind fleet as of whatever historical date was used: which may be a good thing or a bad thing of course (since that is almost 100% onshore for the moment, it is "biased against" offshore - arguably?).
+# **Alternative approach?** An alterative to using renewables
+# ninja (specifically for wind) would be to extract the
+# variability data (of actual wind generation) from historical
+# eirgrid data. This would reflect the performance of the IE
+# wind fleet as of whatever historical date was used: which may
+# be a good thing or a bad thing of course (since that is
+# almost 100% onshore for the moment, it is "biased against"
+# offshore - arguably?).
 # 
 # **Validate/calibrate?** Would be good to calibrate/compare the (normalised) *wind* availability projected from the renewables ninja data with the actual recorded availability in the eirgrid data, for those years where both are available!
 # 
@@ -121,9 +131,11 @@ wind_pu_raw = pd.read_csv(wind_csv_url,
                        index_col=0,parse_dates=True)
 
 
-# ## Read in and preprocess load variability data (via Ireland TSO, [EirGrid](http://www.eirgridgroup.com/))
+# ## Read in and preprocess electricity load variability data (via Ireland TSO, [EirGrid](http://www.eirgridgroup.com/))
 # 
-# We start with [historical data inputs from EirGrid](http://www.eirgridgroup.com/how-the-grid-works/renewables/) which show 15-minute time series for:
+# We start with [historical data inputs from
+# EirGrid](http://www.eirgridgroup.com/how-the-grid-works/renewables/)
+# which show 15-minute time series for:
 # 
 # - wind availability
 # - wind generation
@@ -134,29 +146,29 @@ wind_pu_raw = pd.read_csv(wind_csv_url,
 # 
 # - IE (Republic of Ireland) only
 # - NI (Northern Ireland) only
-# 
 
 # Retrieve example eirgrid load data into a pd.DataFrame
+
+logger.info("Loading electricity demand timeseries data (eirgrid)")
 
 # If file already available locally, can point at that; otherwise use the web url
 # (i.e. uncomment one or the other of the following two statements).
 
-logger.info("Loading electricity demand timeseries data (eirgrid)")
 #eirgrid_base_url = "http://www.eirgridgroup.com/site-files/library/EirGrid/"
 eirgrid_base_url = "eirgrid/"
 
 # Columns of interest:
 cols = ['DateTime', 'GMT Offset', 'IE Demand', 'NI Demand']
 
-load_data_raw = pd.DataFrame()
+elec_load_data_raw = pd.DataFrame()
 for base_year in [2014, 2016, 2018] :
-    load_data_filename = F"System-Data-Qtr-Hourly-{base_year:4}-{(base_year+1):4}.xlsx"
-    load_data_url = eirgrid_base_url + load_data_filename
-    load_data_raw = pd.concat([load_data_raw, pd.read_excel(load_data_url, usecols = cols)], axis=0)
+    elec_load_data_filename = F"System-Data-Qtr-Hourly-{base_year:4}-{(base_year+1):4}.xlsx"
+    elec_load_data_url = eirgrid_base_url + elec_load_data_filename
+    elec_load_data_raw = pd.concat([elec_load_data_raw, pd.read_excel(elec_load_data_url, usecols = cols)], axis=0)
 
-load_data_raw = load_data_raw.rename(columns={'IE Demand':'IE', 'NI Demand':'NI'})
-load_data_raw['IE+NI'] = load_data_raw['IE']+load_data_raw['NI']
-#display(load_data_raw)
+elec_load_data_raw = elec_load_data_raw.rename(columns={'IE Demand':'IE', 'NI Demand':'NI'})
+elec_load_data_raw['IE+NI'] = elec_load_data_raw['IE']+elec_load_data_raw['NI']
+#print(load_data_raw)
 
 
 # ## Fix the timestamps...
@@ -182,39 +194,39 @@ def tz_fix(row):
 
 # This may be rather be slow for a big dataset...
 # Is there a more efficient way of doing this?
-load_data_raw = load_data_raw.apply(tz_fix, axis=1).drop(columns='GMT Offset')
-load_data_raw.set_index('DateTime', verify_integrity=True, inplace=True)
+elec_load_data_raw = elec_load_data_raw.apply(tz_fix, axis=1).drop(columns='GMT Offset')
+elec_load_data_raw.set_index('DateTime', verify_integrity=True, inplace=True)
 
 
 # ## Data quality checks?
 # 
 # Minimal data quality check: make sure [we have no missing values](https://chartio.com/resources/tutorials/how-to-check-if-any-value-is-nan-in-a-pandas-dataframe/) (either `None` or `NaN`).
 
-assert(not load_data_raw.isnull().values.any())
+assert(not elec_load_data_raw.isnull().values.any())
 
-#display(load_data_raw)
+#print(elec_load_data_raw)
 
 
-# ## Show some (raw) load profile stats?
+# ## Show some (raw) electricity load profile stats?
 
-def print_load_profile(load_col):
-    print(F"\n\nLoad data col: {load_col:s}")
+def print_elec_load_profile(elec_load_col):
+    print(F"\n\nElectricity load data col: {elec_load_col:s}")
     
-    load = load_data_raw.loc[:,load_col] # convert to pd.Series
-    load_max = load.max()
-    load_mean = load.mean()
-    load_min = load.min()
-    load_e = load.sum()*0.25 # Assume time interval is 15m == 0.25h
+    elec_load = elec_load_data_raw.loc[:,elec_load_col] # convert to pd.Series
+    elec_load_max = elec_load.max()
+    elec_load_mean = elec_load.mean()
+    elec_load_min = elec_load.min()
+    elec_load_e = elec_load.sum()*0.25 # Assume time interval is 15m == 0.25h
 
-    #display(load)
-    print(F"load_max: {(load_max/1.0e3) : 6.3f} GW")
-    print(F"load_mean: {(load_mean/1.0e3) : 6.3f} GW")
-    print(F"load_min: {(load_min/1.0e3) : 6.3f} GW")
-    print(F"load_e: {(load_e/1.0e6) : 6.3f} TWh")
+    #print(elec_load)
+    print(F"elec_load_max: {(elec_load_max/1.0e3) : 6.3f} GW")
+    print(F"elec_load_mean: {(elec_load_mean/1.0e3) : 6.3f} GW")
+    print(F"elec_load_min: {(elec_load_min/1.0e3) : 6.3f} GW")
+    print(F"elec_load_e: {(elec_load_e/1.0e6) : 6.3f} TWh")
 
-#print_load_profile('IE')
-#print_load_profile('NI')
-#print_load_profile('IE+NI')
+#print_elec_load_profile('IE')
+#print_elec_load_profile('NI')
+#print_elec_load_profile('IE+NI')
 
 
 # ## Required functions
@@ -264,20 +276,20 @@ def solve_network(run_config):
     weather_year_end = weather_year_start + (Nyears - 1)
     assert(weather_year_end <= 2015)
 
-    if (run_config['constant_load_flag']) :
-        load = run_config['constant_load (GW)']*1.0e3 # GW -> MW
+    if (run_config['constant_elec_load_flag']) :
+        elec_load = run_config['constant_elec_load (GW)']*1.0e3 # GW -> MW
     else :
         # Available year(s) for eirgrid load data: 2014-2019 inclusive
-        load_year_start = int(run_config['load_year_start'])
-        assert(load_year_start >= 2014)
-        load_year_end = load_year_start + (Nyears - 1)
-        assert(load_year_end <= 2019)
+        elec_load_year_start = int(run_config['elec_load_year_start'])
+        assert(elec_load_year_start >= 2014)
+        elec_load_year_end = elec_load_year_start + (Nyears - 1)
+        assert(elec_load_year_end <= 2019)
 
-        load_date_start = "{}-01-01 00:00".format(load_year_start)
-        load_date_end = "{}-12-31 23:59".format(load_year_end)
-        load_scope = run_config['load_scope']
-        load = load_data_raw.loc[load_date_start:load_date_end, load_scope]
-        load = load.resample(str(snapshot_interval)+"H").mean()
+        elec_load_date_start = "{}-01-01 00:00".format(elec_load_year_start)
+        elec_load_date_end = "{}-12-31 23:59".format(elec_load_year_end)
+        elec_load_scope = run_config['elec_load_scope']
+        elec_load = elec_load_data_raw.loc[elec_load_date_start:elec_load_date_end, elec_load_scope]
+        elec_load = elec_load.resample(str(snapshot_interval)+"H").mean()
 
     solar_pu = solar_pu_raw.resample(str(snapshot_interval)+"H").mean()
     wind_pu = wind_pu_raw.resample(str(snapshot_interval)+"H").mean()
@@ -308,15 +320,16 @@ def solve_network(run_config):
                               freq=str(snapshot_interval)+"H").to_frame()
 
     snapshots = snaps_df[~((snaps_df.index.month == 2) & (snaps_df.index.day == 29))].index
-    if (not run_config['constant_load_flag']) :
-        load = load[~((load.index.month == 2) & (load.index.day == 29))]
+    if (not run_config['constant_elec_load_flag']) :
+        elec_load = elec_load[~((elec_load.index.month == 2) & (elec_load.index.day == 29))]
         # Kludge to filter out "leap days" (29th Feb in any year)
         # https://stackoverflow.com/questions/34966422/remove-leap-year-day-from-pandas-dataframe
-        # Necessary because we will want to combine arbitrary load years with arbitrary weather years...
-        assert(load.count() == snapshots.size)
-        load = load.values
+        # Necessary because we will want to combine arbitrary electricity load years with
+        # arbitrary weather years...
+        assert(elec_load.count() == snapshots.size)
+        elec_load = elec_load.values
 
-    #display(snapshots)
+    #print(snapshots)
     
     network.set_snapshots(snapshots)
 
@@ -325,7 +338,7 @@ def solve_network(run_config):
     network.add("Bus","local-elec-grid")
     network.add("Load","local-elec-demand",
                 bus="local-elec-grid",
-                p_set= load)
+                p_set= elec_load)
 
     network.add("Generator","nuclear-SMR",
                 bus="local-elec-grid",
@@ -714,19 +727,31 @@ def gather_run_stats(run_config, network):
         run_stats["System notional cost (B€)"] = network.objective/1.0e9 # Scale (by Nyears) to p.a.?
         run_stats["System notional LCOE (€/MWh)"] = network.objective/total_load_e
 
-        run_stats["Load weighted mean notional shadow price (€/MWh)"] = (
+        run_stats["Electricity load weighted mean notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.loads_t.p["local-elec-demand"]).sum() * snapshot_interval)
                                   / total_load_e)
-            # This uses the WHOBS approach, based on shadow price at the ct bus, but now
-            # (correctly?) weighted by the load at each snapshot. This implicitly assumes that all 
-            # loads are indeed connected to the ct bus. This cost will, presumably, be
-            # consistently higher than the "naive" (constant load) cost. Absent other constraints, it
-            # should equal the system notional LCOE as calculated above. But constraints may give rise to
-            # localised "profit" in certain sub-systems. See discussion here:
-            # https://groups.google.com/g/pypsa/c/xXHmChzd8o8
-        run_stats["Load max notional shadow price (€/MWh)"] = (
+        # FIXME: this uses total_load_e which is a total across
+        # **all** loads in network; which works as long as the
+        # only configured load is for electricity. But if/when
+        # the model is expanded with additional loads (not fed
+        # from the local-elec-grid bus) the calc, as currently
+        # expressed, will be wrong...
+        
+        # This uses the WHOBS approach, based on shadow price at
+        # the local-elec-grid (ct in WHOBS) bus, but now
+        # (correctly?) weighted by the load at each
+        # snapshot. This implicitly assumes that all loads are
+        # indeed connected to the ct bus. This cost will,
+        # presumably, be consistently higher than the "naive"
+        # (constant load) cost. Absent other constraints, it
+        # should equal the system notional LCOE as calculated
+        # above. But constraints may give rise to localised
+        # "profit" in certain sub-systems. See discussion here:
+        # https://groups.google.com/g/pypsa/c/xXHmChzd8o8
+            
+        run_stats["Electricity load max notional shadow price (€/MWh)"] = (
             network.buses_t.marginal_price["local-elec-grid"].max())
-        run_stats["Load min notional shadow price (€/MWh)"] = (
+        run_stats["Electricity load min notional shadow price (€/MWh)"] = (
             network.buses_t.marginal_price["local-elec-grid"].min())
 
         # All the following are "weighted means"
