@@ -2,4 +2,6 @@
 *~
 *.nc
 batch_stats*
+# But don't ignore this file
+!.gitignore
 

@@ -228,6 +228,65 @@ def print_elec_load_profile(elec_load_col):
 #print_elec_load_profile('NI')
 #print_elec_load_profile('IE+NI')
 
+#######
+
+# ## Read in and preprocess transport load data (via designated
+# ## Irish energy statistics agency, [SEAI](http://www.seai.ie/))
+
+# We start with [historical "energy flow" data inputs from
+# SEAI](https://www.seai.ie/publications/Energy-by-Fuel.xlsx)
+# which show annual resolution time series (from 1990) for energy
+# flows by NACE sector (Republic of Ireland only). These are
+# subdivided by fuels: but as transport is currently dominated by
+# liquid hydrocarbons fuels we assume the totals are essentially
+# equal to this.  The raw data is in ktoe units, for flows "into"
+# these transport sectors:
+
+# Road Light Goods Vehicle
+# Road Private Car
+# Road Freight
+# Public Passenger Services
+# Rail
+# Domestic Aviation
+# International Aviation
+# Fuel Tourism
+# Navigation [assume dominated by international?]
+# Unspecified
+
+# We actually want energy "consumption after conversion" (as we
+# will be offering alternative conversion pathways to the
+# existing ICE and jet turbine conversions). In this current
+# instantiation we just use crude, hardwired, conversion
+# efficiencies assuming either ICE or jet turbine conversion.
+
+# Retrieve seai transport demand data into a pd.DataFrame
+
+logger.info("Loading transport demand annual timeseries data (seai)")
+
+# If file already available locally, can point at that; otherwise use the web url
+# (i.e. uncomment one or the other of the following two statements).
+
+#seai_base_url = "https://www.seai.ie/publications/Energy-by-Fuel.xlsx"
+seai_base_url = 'seai/'
+
+transport_load_data_filename = 'Energy-by-Fuel.xlsx'
+transport_load_data_url = seai_base_url + transport_load_data_filename
+transport_load_data_sheet = 'Total'
+transport_load_data_raw = pd.read_excel(
+    transport_load_data_url,
+    sheet_name=transport_load_data_sheet,
+    index_col=0,
+).loc['Transport':'Unspecified',:]
+transport_load_data_raw = transport_load_data_raw.drop(columns='NACE').transpose()
+transport_load_data_raw.index=transport_load_data_raw.index.map(int)
+ktoe_toMWh=11630 # https://www.unitjuggler.com/convert-energy-from-ktoe-to-MWh.html
+transport_load_data_raw=transport_load_data_raw*ktoe_toMWh
+transport_load_data_raw.columns.rename('Total (MWh)',inplace=True)
+print('FIXME: do something with this transport load data!')
+#print(transport_load_data_raw)
+
+#########
+
 
 # ## Required functions
 
