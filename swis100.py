@@ -728,26 +728,19 @@ def gather_run_stats(run_config, network):
         run_stats["System notional LCOE (€/MWh)"] = network.objective/total_load_e
 
         run_stats["Electricity load weighted mean notional shadow price (€/MWh)"] = (
-            ((network.buses_t.marginal_price["local-elec-grid"]*network.loads_t.p["local-elec-demand"]).sum() * snapshot_interval)
-                                  / total_load_e)
-        # FIXME: this uses total_load_e which is a total across
-        # **all** loads in network; which works as long as the
-        # only configured load is for electricity. But if/when
-        # the model is expanded with additional loads (not fed
-        # from the local-elec-grid bus) the calc, as currently
-        # expressed, will be wrong...
-        
-        # This uses the WHOBS approach, based on shadow price at
-        # the local-elec-grid (ct in WHOBS) bus, but now
-        # (correctly?) weighted by the load at each
-        # snapshot. This implicitly assumes that all loads are
-        # indeed connected to the ct bus. This cost will,
-        # presumably, be consistently higher than the "naive"
-        # (constant load) cost. Absent other constraints, it
-        # should equal the system notional LCOE as calculated
-        # above. But constraints may give rise to localised
-        # "profit" in certain sub-systems. See discussion here:
-        # https://groups.google.com/g/pypsa/c/xXHmChzd8o8
+            ((network.buses_t.marginal_price["local-elec-grid"]*network.loads_t.p["local-elec-demand"]).sum())
+                                  / network.loads_t.p["local-elec-demand"].sum())
+            # This uses the original WHOBS approach, based on shadow
+            # price at the local-elec-grid (ct in WHOBS) bus, BUT now
+            # corrected (!?) to weight this by the load at each
+            # snapshot. This weighted shadow price will, presumably,
+            # be consistently higher than the "naive" (constant load)
+            # shadow price in original WHOBS. Absent other
+            # constraints, it should equal the system notional LCOE
+            # as calculated above. But constraints may give rise to
+            # localised "profit" in certain sub-systems. See
+            # discussion here:
+            # https://groups.google.com/g/pypsa/c/xXHmChzd8o8
             
         run_stats["Electricity load max notional shadow price (€/MWh)"] = (
             network.buses_t.marginal_price["local-elec-grid"].max())
