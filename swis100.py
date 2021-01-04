@@ -609,13 +609,13 @@ def solve_network(run_config):
             # just use a single, crude, fleet wide, conversion
             # efficiency assuming an "average" ICE conversion.
 
+        surface_transport_load = surface_transport_load/(365.0*24.0) # Annual MWh -> MW
         surface_transport_load = (
             surface_transport_load.resample(str(snapshot_interval)+"H").interpolate())
         surface_transport_load = (surface_transport_load[
                 ~((surface_transport_load.index.month == 2) & 
-                  (surface_transport_load.index.day == 29))]
-                # Kludge to filter out "leap days" (29th Feb in any year)
-                * (snapshot_interval/(365.0*24.0))) # Annual MWh -> MW
+                  (surface_transport_load.index.day == 29))])
+                # Filter out "leap days" (29th Feb in any year)
         surface_transport_load = (surface_transport_load[
             "{}-01-01 00:00".format(surface_transport_load_year_start) :
             "{}-12-31 23:59".format(surface_transport_load_year_end)])
@@ -718,17 +718,29 @@ def gather_run_stats(run_config, network):
         logger.info("NB - RuntimeWarning(s) suppressed (if any)...")
 
         run_stats = pd.Series()
-        snapshot_interval = run_config['snapshot_interval']
 
+        snapshot_interval = run_config['snapshot_interval']
+        total_hours = network.snapshot_weightings.sum()
+
+        # WARNING: System-wide aggregations here currently assume that
+        # all pypsa flows are actually real energy (so all pypsa loads
+        # are energy loads, all generators are energy generators
+        # etc). This WILL break if/when we introduce
+        # "pseudo-energy carriers", specifically including CO2...
+        
+        # Aggregate "final" energy use (across all pypsa "load" components)
         max_load_p = network.loads_t.p.sum(axis='columns').max()
         mean_load_p = network.loads_t.p.sum(axis='columns').mean()
         min_load_p = network.loads_t.p.sum(axis='columns').min()
 
         for g in network.generators.index :
             if (not(g in network.generators_t.p_max_pu.columns)) :
-                # network.generators_t.p_max_pu is not defined for gens with static p_max_pu
-                # but we want to do various generic calculations for *all* generators using this
-                # so add it in for any such generators...
+                # network.generators_t.p_max_pu is not returned
+                # by lopf() for gens with static p_max_pu (since
+                # it doesn't change in time) but we want to do
+                # various generic calculations for *all*
+                # generators using this so add it in for such
+                # generators, if any...
                 network.generators_t.p_max_pu[g] = network.generators.at[g,'p_max_pu']
 
         total_load_e = (network.loads_t.p.sum().sum() * snapshot_interval)
@@ -745,39 +757,55 @@ def gather_run_stats(run_config, network):
         run_stats["System mean load (GW)"] = mean_load_p/1.0e3
 
         run_stats["System available (TWh)"] = total_available_e/1.0e6
-        run_stats["System efficiency gross (%)"] = (total_load_e/total_available_e)*100.0
-            # "gross" includes dispatch down
         run_stats["System dispatched (TWh)"] = total_dispatched_e/1.0e6
         run_stats["System dispatched down (TWh)"] = total_undispatched_e/1.0e6
         run_stats["System dispatched down (%)"] = (total_undispatched_e/total_available_e)*100.0
-        run_stats["System storage loss (TWh)"] = (total_dispatched_e-total_load_e)/1.0e6
-
+        run_stats["System losses (TWh)"] = (total_dispatched_e-total_load_e)/1.0e6
+        run_stats["System efficiency gross (%)"] = (total_load_e/total_available_e)*100.0
+            # "gross" includes dispatch down
         run_stats["System efficiency net (%)"] = (total_load_e/total_dispatched_e)*100.0
             # "net" of dispatch down
 
-        total_hours = network.snapshot_weightings.sum()
 
-        # FIXME: add calculation of "min" LCOE for all gens (based on 100% capacity running)
-        # Note that this doesn't depend on lopf() results - it is statically determined by
-        # fixed and marginal costs of each gen.
+        for l in network.loads.index :
+            run_stats[l+" total_e (TWh)"] = (network.loads_t.p[l].sum()/1.0e6)
+            run_stats[l+" max_p (GW)"] = network.loads_t.p[l].max()/1.0e3
+            run_stats[l+" mean_p (GW)"] = (network.loads_t.p[l].sum()/(total_hours*1.0e3))
+            run_stats[l+" max_p (GW)"] = network.loads_t.p[l].max()/1.0e3
 
         for g in network.generators.index :
-            g_idx =  g
+            # FIXME: add calculation of "min" LCOE for all gens (based on 100% capacity running)
+            # Note that this doesn't depend on lopf() results - it is statically determined by
+            # fixed and marginal costs of each gen.
             run_stats[g+" capacity nom (GW)"] = (
-                network.generators.p_nom_opt[g_idx]/1.0e3)
-            run_stats[g+" available (TWh)"] = available_e[g_idx]/1.0e6
-            run_stats[g+" dispatched (TWh)"] = dispatched_e[g_idx]/1.0e6
-            run_stats[g+" penetration (%)"] = (dispatched_e[g_idx]/total_dispatched_e)*100.0 
-            run_stats[g+" dispatched down (TWh)"] = (undispatched_e[g_idx])/1.0e6
-            run_stats[g+" dispatched down (%)"] = (undispatched_frac[g_idx])*100.0
+                network.generators.p_nom_opt[g]/1.0e3)
+            run_stats[g+" available (TWh)"] = available_e[g]/1.0e6
+            run_stats[g+" dispatched (TWh)"] = dispatched_e[g]/1.0e6
+            run_stats[g+" penetration (%)"] = (dispatched_e[g]/total_dispatched_e)*100.0 
+            run_stats[g+" dispatched down (TWh)"] = (undispatched_e[g])/1.0e6
+            run_stats[g+" dispatched down (%)"] = (undispatched_frac[g])*100.0
             run_stats[g+" capacity factor max (%)"] = (
-                network.generators_t.p_max_pu[g_idx].mean())*100.0
+                network.generators_t.p_max_pu[g].mean())*100.0
             run_stats[g+" capacity factor act (%)"] = (
-                dispatched_e[g_idx]/(network.generators.p_nom_opt[g_idx]*total_hours))*100.0
+                dispatched_e[g]/(network.generators.p_nom_opt[g]*total_hours))*100.0
 
         links_e0 = network.links_t.p0.sum() * snapshot_interval
         links_e1 = network.links_t.p1.sum() * snapshot_interval
 
+        bev_p = network.links.p_nom_opt["BEV"]
+        run_stats["BEV power (GW)"] = bev_p/1.0e3
+        run_stats["BEV elec energy input (TWh)"] = links_e0["BEV"]/1.0e6
+        run_stats["BEV traction energy output (TWh)"] = -links_e1["BEV"]/1.0e6
+        run_stats["BEV capacity factor (%)"] = (links_e0["BEV"] / 
+                                                (bev_p*total_hours))*100.0
+
+        fcev_p = network.links.p_nom_opt["FCEV"]
+        run_stats["FCEV power (GW)"] = fcev_p/1.0e3
+        run_stats["FCEV H2 energy input (TWh)"] = links_e0["FCEV"]/1.0e6
+        run_stats["FCEV traction energy output (TWh)"] = -links_e1["FCEV"]/1.0e6
+        run_stats["FCEV capacity factor (%)"] = (links_e0["FCEV"] / 
+                                                (fcev_p*total_hours))*100.0
+       
         ic_p = network.links.p_nom_opt["ic-export"]
         run_stats["IC power (GW)"] = ic_p/1.0e3
             # NB: interconnector export and import p_nom are constrained to be equal
@@ -807,11 +835,12 @@ def gather_run_stats(run_config, network):
         run_stats["Battery store time (h)"] = battery_store_h
         #run_stats["Battery storage time (d)"] = battery_store_h/24.0
 
+        
         # P2H and H2P represent separate plant with separate capacity factors (0-100%); albeit, with 
         # no independent H2 load on the H2 bus, the sum of their respective capacity factors still 
         # has to be <=100% (as they will never run at the same time - that would always increase
         # system cost, as well as being just silly!)
-        links = ["H2 electrolysis", "H2 OCGT", "H2 CCGT"]
+        links = ["H2 electrolysis", "H2 OCGT", "H2 CCGT", 'BEV', 'FCEV']
         for l in links:
             l_idx =  l
             run_stats[l+" i/p capacity nom (GW)"] = (network.links.p_nom_opt[l_idx]/1.0e3)
