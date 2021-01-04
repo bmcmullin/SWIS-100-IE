@@ -17,13 +17,14 @@ from pyomo.environ import Constraint
 
 import numpy as np
 import pandas as pd
-
 def fmt_float(x) :
     float_fmt_str = "{:6.2f}"
     return (float_fmt_str.format(x))
 
 pd.set_option('float_format', fmt_float)
 idx = pd.IndexSlice
+
+from datetime import timedelta
 
 config_converters = {
 
@@ -67,45 +68,36 @@ config_converters = {
 }
 
 
-# ## Required data
+# ## Read in required static data
 
-# ### Wind and solar resource variabilities
-# 
+# ### Wind and solar resource, pu_raw variability data
+logger.info("Reading solar and wind variability (pu) timeseries data (via renewables.ninja)")
+
 # From [Renewables.ninja Downloads](https://www.renewables.ninja/downloads):
 # 
 # - Solar time series "ninja_pv_europe_v1.1_sarah.csv" from [PV v1.1 Europe (.zip)](https://www.renewables.ninja/static/downloads/ninja_europe_pv_v1.1.zip)
 # - Wind time series "ninja_wind_europe_v1.1_current_on-offshore.csv" from [Wind v1.1 Europe (.zip)](https://www.renewables.ninja/static/downloads/ninja_europe_wind_v1.1.zip)
-# 
-# ### IE Load (electricity demand) variability
-# 
-# From [eirgrid System and Renewable Data Reports](http://www.eirgridgroup.com/how-the-grid-works/renewables/):
-# 
-# - [System-Data-Qtr-Hourly-2018-2019.xlsx](http://www.eirgridgroup.com/site-files/library/EirGrid/System-Data-Qtr-Hourly-2018-2019.xlsx) 
-# - [System-Data-Qtr-Hourly-2016-2017.xlsx](http://www.eirgridgroup.com/site-files/library/EirGrid/System-Data-Qtr-Hourly-2016-2017.xlsx)
-# - [System-Data-Qtr-Hourly-2014-2015.xlsx](http://www.eirgridgroup.com/site-files/library/EirGrid/System-Data-Qtr-Hourly-2014-2015.xlsx)
-# 
 
-# ## Read in wind and solar variability data
-# 
-# **TODO:** Ideally, recode this to check for local copy, and, if
-# not available, automatically download and extract the required
-# .csv from the .zip in each case; but for the moment, just
-# assume there is are local copies of the .csv files already
-# available.
-# 
+# **TODO:** Ideally, recode this to check for local file
+# copy, and, if not available, automatically download and
+# extract the required .csv from the .zip in each case; but
+# for the moment, just assume there is are local copies of
+# the .csv files already available.
+
 # **Alternative approach?** An alterative to using renewables
 # ninja (specifically for wind) would be to extract the
-# variability data (of actual wind generation) from historical
-# eirgrid data. This would reflect the performance of the IE
-# wind fleet as of whatever historical date was used: which may
-# be a good thing or a bad thing of course (since that is
-# almost 100% onshore for the moment, it is "biased against"
-# offshore - arguably?).
-# 
-# **Validate/calibrate?** Would be good to calibrate/compare the (normalised) *wind* availability projected from the renewables ninja data with the actual recorded availability in the eirgrid data, for those years where both are available!
-# 
+# variability data (of actual wind generation) from
+# historical eirgrid data. This would reflect the performance
+# of the IE wind fleet as of whatever historical date was
+# used: which may be a good thing or a bad thing of course
+# (since that is almost 100% onshore for the moment, it is
+# "biased against" offshore - arguably?).
 
-logger.info("Loading solar and wind variability timeseries data (renewables.ninja)")
+# Validate/calibrate? Would be good to calibrate/compare
+# the (normalised) *wind* availability projected from the
+# renewables ninja data with the actual recorded availability
+# in the eirgrid data, for those years where both are
+# available!
 
 #rninja_base_url = "https://www.renewables.ninja/static/downloads/"
 r_ninja_base_url = 'ninja/' # Actually already downloaded...
@@ -118,7 +110,9 @@ solar_pv_csv_url = r_ninja_base_url + solar_pv_csv_file
 
 #read in renewables.ninja solar time series
 solar_pu_raw = pd.read_csv(solar_pv_csv_url,
-                       index_col=0,parse_dates=True)
+                           usecols=['time','IE'],
+                           index_col='time',
+                           parse_dates=True)
 
 #wind_zip_file = 'ninja_europe_wind_v1.1.zip'
 #wind_zip_url = r_ninja_base_url + wind_zip_file
@@ -128,28 +122,29 @@ wind_csv_url = r_ninja_base_url + wind_csv_file
 
 #read in renewables.ninja wind time series
 wind_pu_raw = pd.read_csv(wind_csv_url,
-                       index_col=0,parse_dates=True)
+                          usecols=['time','IE_ON','IE_OFF'],
+                          index_col='time',
+                          parse_dates=True)
 
+# ### IE/NI electricity load (demand) data
+logger.info("Reading electricity demand timeseries data (via eirgrid)")
 
-# ## Read in and preprocess electricity load variability data (via Ireland TSO, [EirGrid](http://www.eirgridgroup.com/))
-# 
 # We start with [historical data inputs from
-# EirGrid](http://www.eirgridgroup.com/how-the-grid-works/renewables/)
-# which show 15-minute time series for:
-# 
+# EirGrid](http://www.eirgridgroup.com/how-the-grid-works/renewables/):
+#
+# - [System-Data-Qtr-Hourly-2018-2019.xlsx](http://www.eirgridgroup.com/site-files/library/EirGrid/System-Data-Qtr-Hourly-2018-2019.xlsx) 
+# - [System-Data-Qtr-Hourly-2016-2017.xlsx](http://www.eirgridgroup.com/site-files/library/EirGrid/System-Data-Qtr-Hourly-2016-2017.xlsx)
+# - [System-Data-Qtr-Hourly-2014-2015.xlsx](http://www.eirgridgroup.com/site-files/library/EirGrid/System-Data-Qtr-Hourly-2014-2015.xlsx)
+
+# There show 15-minute time series for:
 # - wind availability
 # - wind generation
 # - total generation
 # - total load
 # 
 # broken out by:
-# 
 # - IE (Republic of Ireland) only
 # - NI (Northern Ireland) only
-
-# Retrieve example eirgrid load data into a pd.DataFrame
-
-logger.info("Loading electricity demand timeseries data (eirgrid)")
 
 # If file already available locally, can point at that; otherwise use the web url
 # (i.e. uncomment one or the other of the following two statements).
@@ -168,16 +163,16 @@ for base_year in [2014, 2016, 2018] :
 
 elec_load_data_raw = elec_load_data_raw.rename(columns={'IE Demand':'IE', 'NI Demand':'NI'})
 elec_load_data_raw['IE+NI'] = elec_load_data_raw['IE']+elec_load_data_raw['NI']
-#print(load_data_raw)
-
 
 # ## Fix the timestamps...
-# 
-# The raw eirgrid data has one column showing localtime (`DateTime`, type `pd.Timestamp`, holding "naive" timestamps - no recorded timezone) and a separate column showing the offset, in hours, from UTC for each individual row (`GMT Offset`). It will be simpler here to convert all the `DateTime` values to UTC (and explicitly having the UTC timezone).
-# 
-# We can then dispense with the `GMT Offset` column as it is redundant.
 
-from datetime import timedelta
+# The raw eirgrid data has one column showing localtime
+# (`DateTime`, type `pd.Timestamp`, holding "naive" timestamps -
+# no recorded timezone) and a separate column showing the offset,
+# in hours, from UTC for each individual row (`GMT Offset`). It
+# will be simpler here to convert all the `DateTime` values to
+# UTC (and explicitly having the UTC timezone). We can then
+# dispense with the `GMT Offset` column as it is redundant.
 
 def tz_fix(row):
   try:
@@ -197,15 +192,12 @@ def tz_fix(row):
 elec_load_data_raw = elec_load_data_raw.apply(tz_fix, axis=1).drop(columns='GMT Offset')
 elec_load_data_raw.set_index('DateTime', verify_integrity=True, inplace=True)
 
+# ## Electricity load data quality checks?
 
-# ## Data quality checks?
-# 
-# Minimal data quality check: make sure [we have no missing values](https://chartio.com/resources/tutorials/how-to-check-if-any-value-is-nan-in-a-pandas-dataframe/) (either `None` or `NaN`).
-
+# Minimal data quality check: make sure [we have no missing
+# values](https://chartio.com/resources/tutorials/how-to-check-if-any-value-is-nan-in-a-pandas-dataframe/)
+# (either `None` or `NaN`).
 assert(not elec_load_data_raw.isnull().values.any())
-
-#print(elec_load_data_raw)
-
 
 # ## Show some (raw) electricity load profile stats?
 
@@ -228,15 +220,14 @@ def print_elec_load_profile(elec_load_col):
 #print_elec_load_profile('NI')
 #print_elec_load_profile('IE+NI')
 
-#######
 
-# ## Read in and preprocess transport load data (via designated
-# ## Irish energy statistics agency, [SEAI](http://www.seai.ie/))
+# IE transport load (demand) data (via IE energy statistics agency, [SEAI](http://www.seai.ie/))
+logger.info("Loading transport demand annual timeseries data (seai)")
 
 # We start with [historical "energy flow" data inputs from
 # SEAI](https://www.seai.ie/publications/Energy-by-Fuel.xlsx)
 # which show annual resolution time series (from 1990) for energy
-# flows by NACE sector (Republic of Ireland only). These are
+# flows by sector (Republic of Ireland only). These are
 # subdivided by fuels: but as transport is currently dominated by
 # liquid hydrocarbons fuels we assume the totals are essentially
 # equal to this.  The raw data is in ktoe units, for flows "into"
@@ -252,16 +243,6 @@ def print_elec_load_profile(elec_load_col):
 # Fuel Tourism
 # Navigation [assume dominated by international?]
 # Unspecified
-
-# We actually want energy "consumption after conversion" (as we
-# will be offering alternative conversion pathways to the
-# existing ICE and jet turbine conversions). In this current
-# instantiation we just use crude, hardwired, conversion
-# efficiencies assuming either ICE or jet turbine conversion.
-
-# Retrieve seai transport demand data into a pd.DataFrame
-
-logger.info("Loading transport demand annual timeseries data (seai)")
 
 # If file already available locally, can point at that; otherwise use the web url
 # (i.e. uncomment one or the other of the following two statements).
@@ -284,11 +265,12 @@ transport_load_data_raw.index = transport_load_data_raw.index+timedelta(hours=(3
 ktoe_to_MWh=11630.0 # https://www.unitjuggler.com/convert-energy-from-ktoe-to-MWh.html
 transport_load_data_raw=transport_load_data_raw*ktoe_to_MWh
 transport_load_data_raw.columns.rename('Total (MWh)',inplace=True)
+assert(not transport_load_data_raw.isnull().values.any())
 
-logger.warning('FIXME: do something with this transport load data!')
-#print(transport_load_data_raw)
+# Read raw technology assumptions data (will be further
+# processed/refined for each run)
+logger.info("Reading raw technology assumptions data (via assumptions/SWIS.ods)")
 
-# Load raw technology assumptions data (will be further processed/refined for each run)
 raw_assumptions = pd.read_excel('assumptions/SWIS.ods',
                                 index_col=list(range(3)),
                                 header=0,
@@ -615,9 +597,12 @@ def solve_network(run_config):
                 str(surface_transport_load_year_end +1),
                 surface_cols].sum(axis=1)
             * assumptions.at['ICEV tank-to-wheel','efficiency'])
-        # We count only the "final" ("wheel") energy at load, to
-        # allow for use of more or less efficient upstream converters,
-        # relative to current ICE-dominated fleet...
+        # We count only the "final" ("wheel") energy as load, to
+        # allow for deployment of more or less efficient upstream
+        # converters (vehicle fleet), relative to current
+        # ICE-dominated fleet. In this current instantiation we
+        # just use a single, crude, fleet wide, conversion
+        # efficiency assuming an "average" ICE conversion.
 
     surface_transport_load = (
         surface_transport_load.resample(str(snapshot_interval)+"H").interpolate())
