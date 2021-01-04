@@ -34,7 +34,6 @@ config_converters = {
 
     'use_pyomo' : bool,
     'solver_name' : str,
-    'assumptions_src' : str,
     'assumptions_year' : int,
     'usd_to_eur' : float,
     'constant_elec_load_flag' : bool,
@@ -272,6 +271,7 @@ assert(not transport_load_data_raw.isnull().values.any())
 logger.info("Reading raw technology assumptions data (via assumptions/SWIS.ods)")
 
 assumptions_raw = pd.read_excel('assumptions/SWIS.ods',
+                                usecols=['technology','year','parameter','value','unit'],
                                 index_col=list(range(3)),
                                 header=0,
                                 sheet_name='SWIS').sort_index()
@@ -601,7 +601,7 @@ def solve_network(run_config):
                     str(surface_transport_load_year_start - 1) : 
                     str(surface_transport_load_year_end +1),
                     surface_cols].sum(axis=1)
-                * assumptions.at['ICEV tank-to-wheel','efficiency'])
+                * assumptions.at['ICEV','efficiency'])
             # We count only the "final" ("wheel") energy as load, to
             # allow for deployment of more or less efficient upstream
             # converters (vehicle fleet), relative to current
@@ -627,7 +627,26 @@ def solve_network(run_config):
                 bus="surface_transport_final",
                 p_set= surface_transport_load)
 
-    
+    network.add("Link",
+                    "BEV", # tacitly includes possibility of battery electic shipping!?
+                    bus0="local-elec-grid",
+                    bus1="surface_transport_final",
+                    p_nom_extendable=True,
+                    p_nom_min = run_config['BEV_min_p (GW)']*1e3, # GW -> MW
+                    p_nom_max = run_config['BEV_max_p (GW)']*1e3, # GW -> MW
+                    efficiency=assumptions.at["BEV","efficiency"],
+                    capital_cost=assumptions.at["BEV","fixed"])
+
+    network.add("Link",
+                    "FCEV", # tacitly includes possibility of HFC shipping!?
+                    bus0="H2",
+                    bus1="surface_transport_final",
+                    p_nom_extendable=True,
+                    p_nom_min = run_config['FCEV_min_p (GW)']*1e3, # GW -> MW
+                    p_nom_max = run_config['FCEV_max_p (GW)']*1e3, # GW -> MW
+                    efficiency=assumptions.at["FCEV","efficiency"],
+                    capital_cost=assumptions.at["FCEV","fixed"])
+
     # Global constraints:
     
     # Interconnector import and export links are constrained so that rated power capacity at the 
