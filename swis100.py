@@ -271,7 +271,7 @@ assert(not transport_load_data_raw.isnull().values.any())
 # processed/refined for each run)
 logger.info("Reading raw technology assumptions data (via assumptions/SWIS.ods)")
 
-raw_assumptions = pd.read_excel('assumptions/SWIS.ods',
+assumptions_raw = pd.read_excel('assumptions/SWIS.ods',
                                 index_col=list(range(3)),
                                 header=0,
                                 sheet_name='SWIS').sort_index()
@@ -285,10 +285,10 @@ def annuity(lifetime, rate):
     else:
         return rate/(1.0 - (1.0 / (1.0 + rate)**lifetime))
 
-def prepare_assumptions(raw_assumptions,Nyears=1,usd_to_eur=1/1.2,assumptions_year=2020):
+def prepare_assumptions(Nyears=1,usd_to_eur=1/1.2,assumptions_year=2020):
     """set all asset assumptions and other parameters for specific run_config"""
 
-    assumptions = raw_assumptions.copy(deep=True)
+    assumptions = assumptions_raw.copy(deep=True)
 
     #correct units to MW and EUR
     assumptions.loc[assumptions.unit.str.contains("/kW"),"value"]*=1e3
@@ -318,13 +318,13 @@ def solve_network(run_config):
     assumptions_year = int(run_config['assumptions_year'])
     assert (assumptions_year in [2020, 2030, 2050])
 
-    assumptions = prepare_assumptions(raw_assumptions,Nyears=Nyears,
+    assumptions = prepare_assumptions(Nyears=Nyears,
                                       assumptions_year=assumptions_year,
                                       usd_to_eur=run_config['usd_to_eur'])
 
     load_year_start = int(run_config['load_year_start'])
 
-    # Available year(s) for weather data: solar 1985-2015 inclusive, wind 1980-2016
+    # Available year(s) for vre (pu) resource data: solar 1985-2015 inclusive, wind 1980-2016
     weather_year_start = int(run_config['weather_year_start'])
     assert(weather_year_start >= 1985)
     weather_year_end = weather_year_start + (Nyears - 1)
@@ -342,8 +342,9 @@ def solve_network(run_config):
     
     # Could just skip resampling and just let pypsa sub-sample
     # (within lopf()); though note that this will no longer be
-    # expected to exactly match overall average availability. But
-    # if such subsampling is preferred, uncomment:
+    # expected to exactly match overall average reseource pu
+    # availability. But if such subsampling is preferred,
+    # uncomment:
 
     #solar_pu = solar_pu_raw
     #wind_pu = wind_pu_raw
@@ -583,40 +584,44 @@ def solve_network(run_config):
     # We aggregate even 'Navigation' and 'Unspecified' into "surface" transport as a 
     # (very coarse!) heuristic.
 
-    # Available year(s) for seai transport data is 1990-2018, but allowing for
-    # interpolation, usable range is 1991-2017 inclusive
-    surface_transport_load_year_start = load_year_start
-    assert(surface_transport_load_year_start >= 1991)
-    surface_transport_load_year_end = surface_transport_load_year_start + (Nyears - 1)
-    assert(surface_transport_load_year_end <= 2017)
+    # Configure required surface_transport_load (constant or timeseries)
+    if (run_config['constant_surface_transport_load_flag']) :
+        surface_transport_load = run_config['constant_surface_transport_load (GW)']*1.0e3 # GW -> MW
+    else :
+        # Available year(s) for seai transport data are 1990-2018, but allowing for
+        # interpolation, usable range is 1991-2017 inclusive
+        surface_transport_load_year_start = load_year_start
+        assert(surface_transport_load_year_start >= 1991)
+        surface_transport_load_year_end = surface_transport_load_year_start + (Nyears - 1)
+        assert(surface_transport_load_year_end <= 2017)
 
-    # We include an extra year before and after the years of interest to smooth the interpolation
-    surface_transport_load = (
-        transport_load_data_raw.loc[
-                str(surface_transport_load_year_start - 1) : 
-                str(surface_transport_load_year_end +1),
-                surface_cols].sum(axis=1)
-            * assumptions.at['ICEV tank-to-wheel','efficiency'])
-        # We count only the "final" ("wheel") energy as load, to
-        # allow for deployment of more or less efficient upstream
-        # converters (vehicle fleet), relative to current
-        # ICE-dominated fleet. In this current instantiation we
-        # just use a single, crude, fleet wide, conversion
-        # efficiency assuming an "average" ICE conversion.
+        # We include an extra year before and after the years of interest to smooth the interpolation
+        surface_transport_load = (
+            transport_load_data_raw.loc[
+                    str(surface_transport_load_year_start - 1) : 
+                    str(surface_transport_load_year_end +1),
+                    surface_cols].sum(axis=1)
+                * assumptions.at['ICEV tank-to-wheel','efficiency'])
+            # We count only the "final" ("wheel") energy as load, to
+            # allow for deployment of more or less efficient upstream
+            # converters (vehicle fleet), relative to current
+            # ICE-dominated fleet. In this current instantiation we
+            # just use a single, crude, fleet wide, conversion
+            # efficiency assuming an "average" ICE conversion.
 
-    surface_transport_load = (
-        surface_transport_load.resample(str(snapshot_interval)+"H").interpolate())
-    surface_transport_load = (surface_transport_load[
-            ~((surface_transport_load.index.month == 2) & 
-              (surface_transport_load.index.day == 29))]
-            # Kludge to filter out "leap days" (29th Feb in any year)
-            * (snapshot_interval/(365.0*24.0))) # MWh -> MW
-    surface_transport_load = (surface_transport_load[
-        "{}-01-01 00:00".format(surface_transport_load_year_start) :
-        "{}-12-31 23:59".format(surface_transport_load_year_end)])
-            # Filter just the full years actually in scope
-    assert(surface_transport_load.count() == snapshots.size)
-    surface_transport_load = surface_transport_load.values
+        surface_transport_load = (
+            surface_transport_load.resample(str(snapshot_interval)+"H").interpolate())
+        surface_transport_load = (surface_transport_load[
+                ~((surface_transport_load.index.month == 2) & 
+                  (surface_transport_load.index.day == 29))]
+                # Kludge to filter out "leap days" (29th Feb in any year)
+                * (snapshot_interval/(365.0*24.0))) # Annual MWh -> MW
+        surface_transport_load = (surface_transport_load[
+            "{}-01-01 00:00".format(surface_transport_load_year_start) :
+            "{}-12-31 23:59".format(surface_transport_load_year_end)])
+                # Filter just the full years actually in scope
+        assert(surface_transport_load.count() == snapshots.size)
+        surface_transport_load = surface_transport_load.values
 
     network.add("Load","surface-transport-demand",
                 bus="surface_transport_final",
