@@ -219,7 +219,6 @@ def print_elec_load_profile(elec_load_col):
 #print_elec_load_profile('NI')
 #print_elec_load_profile('IE+NI')
 
-
 # IE transport load (demand) data (via IE energy statistics agency, [SEAI](http://www.seai.ie/))
 logger.info("Loading transport demand annual timeseries data (seai)")
 
@@ -279,6 +278,42 @@ assumptions_raw = pd.read_excel('assumptions/SWIS.ods',
                                 index_col=list(range(3)),
                                 header=0,
                                 sheet_name='SWIS').sort_index()
+
+logger.info("Loading space and water heat demand timeseries data (when2heat)")
+
+# when2heat_base_url = 'https://data.open-power-system-data.org/when2heat/2019-08-06/'
+
+# The when2heat dataset provides high time-resolution estimated
+# timeseries for aggregate national (IE) water and space heating
+# timeseries (in MW), as well as heat pump COP estimates. For
+# full details on the methodology see:
+# https://www.nature.com/articles/s41597-019-0199-y
+
+# This does *not* include heat demand for purposes other than
+# space and water heating: particularly higher temperature
+# industrial process heat requirements...
+
+when2heat_base_url = 'when2heat/'
+when2heat_data_filename = 'when2heat.csv'
+when2heat_data_url = when2heat_base_url + when2heat_data_filename
+
+usecols = ['utc_timestamp',
+           'IE_heat_demand_total', 'IE_heat_demand_space', 'IE_heat_demand_water',
+           'IE_COP_ASHP_radiator', 'IE_COP_ASHP_water']
+
+heat_load_data_raw = pd.read_csv(
+    when2heat_data_url,
+    delimiter=';',
+    decimal=',',
+    usecols=usecols,
+    index_col='utc_timestamp')
+heat_load_data_raw.index = pd.to_datetime(heat_load_data_raw.index)
+heat_load_data_raw = heat_load_data_raw.dropna()['2008-01-01':]
+    # Discard initial small number of rows for very end of 2007;
+    # and trailing NaN rows (presumably due to missing data in
+    # the when2heat upstream data sources?). End result is that
+    # we only have this data for the full years 2008-2013
+    # inclusive.
 
 # Required functions
 
@@ -572,7 +607,7 @@ def solve_network(run_config):
                      e_cyclic=True,
                      capital_cost=assumptions.at[h2_storage_tech,"fixed"])
 
-    # Transport subsystem
+    # Transport subsystem (surface only as yet: excludes aviation)
     network.add("Bus","surface_transport_final")
 
     # Configure required surface_transport_load
@@ -649,6 +684,67 @@ def solve_network(run_config):
                     p_nom_max = run_config['FCEV_max_p (GW)']*1e3, # GW -> MW
                     efficiency=assumptions.at["FCEV","efficiency"],
                     capital_cost=assumptions.at["FCEV","fixed"])
+
+### Warning Will Rogerson: unstable, WIP!!
+    # Heat subsystem (space and water heating only as yet: excludes industrial process heat)
+    network.add("Bus","space_heat")
+    
+    # Configure required space_heat_load (constant or timeseries)
+    if (run_config['constant_space_heat_load_flag']) :
+        space_heat_load = run_config['constant_space_heat_load (GW)']*1.0e3 # GW -> MW
+    else :
+        # Available year(s) for when2heat data are 2008-2013 inclusive
+        # *Arguably* we should use the configured **weather**
+        # *year here as heat demand is weather related!?
+        space_heat_load_year_start = load_year_start
+        assert(space_heat_load_year_start >= 2008)
+        space_heat_load_year_end = space_heat_load_year_start + (Nyears - 1)
+        assert(space_heat_load_year_end <= 2013)
+
+        space_heat_load_date_start = "{}-01-01 00:00".format(space_heat_load_year_start)
+        space_heat_load_date_end = "{}-12-31 23:59".format(space_heat_load_year_end)
+        space_heat_load = heat_load_data_raw.loc[space_heat_load_date_start:space_heat_load_date_end, 'IE_heat_demand_space']
+        space_heat_load = space_heat_load.resample(str(snapshot_interval)+"H").mean()
+
+        space_heat_load = space_heat_load[~((space_heat_load.index.month == 2) & (space_heat_load.index.day == 29))]
+        # Kludge to filter out "leap days" (29th Feb in any year)
+        # https://stackoverflow.com/questions/34966422/remove-leap-year-day-from-pandas-dataframe
+        # Necessary because we want to be able to combine arbitrary load years with
+        # arbitrary weather years...
+        assert(space_heat_load.count() == snapshots.size)
+        space_heat_load = space_heat_load.values
+
+    network.add("Load","space-heat-demand",
+                bus="space_heat",
+                p_set= space_heat_load)
+
+    network.add("Link",
+                    "ASHP",
+                    bus0="local-elec-grid",
+                    bus1="space_heat",
+                    p_nom_extendable=True,
+                    p_nom_min = run_config['ASHP_min_p (GW)']*1e3, # GW -> MW
+                    p_nom_max = run_config['ASHP_max_p (GW)']*1e3, # GW -> MW
+                    efficiency=2.5, # FIXME: very rough, constant, SPF for functional test only;
+                                    # needs to be timeseries ... can pypsa handle that?
+                    capital_cost=assumptions.at["ASHP","fixed"])
+
+    # network.add("Link",
+    #                 "FCEV", # tacitly includes possibility of HFC shipping!?
+    #                 bus0="H2",
+    #                 bus1="surface_transport_final",
+    #                 p_nom_extendable=True,
+    #                 p_nom_min = run_config['FCEV_min_p (GW)']*1e3, # GW -> MW
+    #                 p_nom_max = run_config['FCEV_max_p (GW)']*1e3, # GW -> MW
+    #                 efficiency=assumptions.at["FCEV","efficiency"],
+    #                 capital_cost=assumptions.at["FCEV","fixed"])
+
+    #network.add("Bus","water_heat")
+
+
+
+###
+    
 
     # Global constraints:
     
@@ -769,7 +865,6 @@ def gather_run_stats(run_config, network):
         run_stats["System efficiency net (%)"] = (total_load_e/total_dispatched_e)*100.0
             # "net" of dispatch down
 
-
         for l in network.loads.index :
             total_e = network.loads_t.p[l].sum() * snapshot_interval
             run_stats[l+" total_e (TWh)"] = (total_e/1.0e6)
@@ -796,30 +891,16 @@ def gather_run_stats(run_config, network):
         links_e0 = network.links_t.p0.sum() * snapshot_interval
         links_e1 = network.links_t.p1.sum() * snapshot_interval
 
-        links_surface_transport = ["BEV", "FCEV"]
+        links_final_conversion = ["BEV", "FCEV", "ASHP"]
         for l in links_surface_transport:
             p_nom = network.links.p_nom_opt[l]
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
             run_stats[l+" o/p capacity nom (GW)"] = (
                 (p_nom*network.links.efficiency[l])/1.0e3)
-            run_stats[l+" elec energy input (TWh)"] = links_e0[l]/1.0e6
-            run_stats[l+" traction energy output (TWh)"] = -links_e1[l]/1.0e6
+            run_stats[l+" energy input (TWh)"] = links_e0[l]/1.0e6
+            run_stats[l+" energy output (TWh)"] = -links_e1[l]/1.0e6
             run_stats[l+" capacity factor (%)"] = (
                 links_e0[l]/(p_nom*total_hours))*100.0
-
-        # bev_p = network.links.p_nom_opt["BEV"]
-        # run_stats["BEV power (GW)"] = bev_p/1.0e3
-        # run_stats["BEV elec energy input (TWh)"] = links_e0["BEV"]/1.0e6
-        # run_stats["BEV traction energy output (TWh)"] = -links_e1["BEV"]/1.0e6
-        # run_stats["BEV capacity factor (%)"] = (links_e0["BEV"] / 
-        #                                         (bev_p*total_hours))*100.0
-
-        # fcev_p = network.links.p_nom_opt["FCEV"]
-        # run_stats["FCEV power (GW)"] = fcev_p/1.0e3
-        # run_stats["FCEV H2 energy input (TWh)"] = links_e0["FCEV"]/1.0e6
-        # run_stats["FCEV traction energy output (TWh)"] = -links_e1["FCEV"]/1.0e6
-        # run_stats["FCEV capacity factor (%)"] = (links_e0["FCEV"] / 
-        #                                         (fcev_p*total_hours))*100.0
        
         ic_p = network.links.p_nom_opt["ic-export"]
         run_stats["IC power (GW)"] = ic_p/1.0e3
@@ -998,5 +1079,13 @@ def gather_run_stats(run_config, network):
         run_stats["Transport final energy from FCEV notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["surface_transport_final"]*network.links_t.p1["FCEV"]).sum())
                                   / network.links_t.p1["FCEV"].sum())
+
+        run_stats["Elec. for ASHP notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["ASHP"]).sum())
+                                  / network.links_t.p0["ASHP"].sum())
+
+        run_stats["Heat final energy from ASHP notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["space_heat"]*network.links_t.p1["ASHP"]).sum())
+                                  / network.links_t.p1["ASHP"].sum())
 
     return run_stats
