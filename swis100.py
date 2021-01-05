@@ -262,7 +262,11 @@ transport_load_data_raw.index = transport_load_data_raw.index+timedelta(hours=(3
         # anchor at mid-year (for later interpolation across years)
         # (this is off by 12 hours in leap years - but we neglect that!)
 ktoe_to_MWh=11630.0 # https://www.unitjuggler.com/convert-energy-from-ktoe-to-MWh.html
-transport_load_data_raw=transport_load_data_raw*ktoe_to_MWh
+transport_load_data_raw = (
+    (transport_load_data_raw*ktoe_to_MWh)/(365.0*24))
+    # Annual ktoe -> average continuous MW
+    # (Neglect slight conversion error in leap years...)
+
 transport_load_data_raw.columns.rename('Total (MWh)',inplace=True)
 assert(not transport_load_data_raw.isnull().values.any())
 
@@ -609,7 +613,6 @@ def solve_network(run_config):
             # just use a single, crude, fleet wide, conversion
             # efficiency assuming an "average" ICE conversion.
 
-        surface_transport_load = surface_transport_load/(365.0*24.0) # Annual MWh -> MW
         surface_transport_load = (
             surface_transport_load.resample(str(snapshot_interval)+"H").interpolate())
         surface_transport_load = (surface_transport_load[
@@ -907,6 +910,8 @@ def gather_run_stats(run_config, network):
             run_stats[b+" min notional shadow price (€/MWh)"] = (
                 network.buses_t.marginal_price[b].min())
 
+        # All the following are "weighted means": shadow prices at a bus weighted by some flow to or from that bus 
+
         run_stats["Elec. load weighted mean notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.loads_t.p["local-elec-demand"]).sum())
                                   / network.loads_t.p["local-elec-demand"].sum())
@@ -922,7 +927,10 @@ def gather_run_stats(run_config, network):
             # discussion here:
             # https://groups.google.com/g/pypsa/c/xXHmChzd8o8
             
-        # All the following are "weighted means": shadow prices at a bus weighted by some flow to or from that bus 
+        run_stats["Surface transport load weighted mean notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["surface_transport_final"]*network.loads_t.p["surface-transport-demand"]).sum())
+                                  / network.loads_t.p["surface-transport-demand"].sum())
+        
         run_stats["Offshore wind notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.generators_t.p["offshore wind"]).sum())
                                   / network.generators_t.p["offshore wind"].sum())
@@ -979,9 +987,16 @@ def gather_run_stats(run_config, network):
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["BEV"]).sum())
                                   / network.links_t.p0["BEV"].sum())
 
+        run_stats["Transport final energy from BEV notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["surface_transport_final"]*network.links_t.p1["BEV"]).sum())
+                                  / network.links_t.p1["BEV"].sum())
+
         run_stats["H2 for FCEV notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["H2"]*network.links_t.p0["FCEV"]).sum())
                                   / network.links_t.p0["FCEV"].sum())
 
+        run_stats["Transport final energy from FCEV notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["surface_transport_final"]*network.links_t.p1["FCEV"]).sum())
+                                  / network.links_t.p1["FCEV"].sum())
 
     return run_stats
