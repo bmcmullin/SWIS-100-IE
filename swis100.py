@@ -768,10 +768,11 @@ def gather_run_stats(run_config, network):
 
 
         for l in network.loads.index :
-            run_stats[l+" total_e (TWh)"] = (network.loads_t.p[l].sum()/1.0e6)
+            total_e = network.loads_t.p[l].sum() * snapshot_interval
+            run_stats[l+" total_e (TWh)"] = (total_e/1.0e6)
             run_stats[l+" max_p (GW)"] = network.loads_t.p[l].max()/1.0e3
-            run_stats[l+" mean_p (GW)"] = (network.loads_t.p[l].sum()/(total_hours*1.0e3))
-            run_stats[l+" max_p (GW)"] = network.loads_t.p[l].max()/1.0e3
+            run_stats[l+" mean_p (GW)"] = (total_e/(total_hours*1.0e3))
+            run_stats[l+" min_p (GW)"] = network.loads_t.p[l].min()/1.0e3
 
         for g in network.generators.index :
             # FIXME: add calculation of "min" LCOE for all gens (based on 100% capacity running)
@@ -792,19 +793,30 @@ def gather_run_stats(run_config, network):
         links_e0 = network.links_t.p0.sum() * snapshot_interval
         links_e1 = network.links_t.p1.sum() * snapshot_interval
 
-        bev_p = network.links.p_nom_opt["BEV"]
-        run_stats["BEV power (GW)"] = bev_p/1.0e3
-        run_stats["BEV elec energy input (TWh)"] = links_e0["BEV"]/1.0e6
-        run_stats["BEV traction energy output (TWh)"] = -links_e1["BEV"]/1.0e6
-        run_stats["BEV capacity factor (%)"] = (links_e0["BEV"] / 
-                                                (bev_p*total_hours))*100.0
+        links_surface_transport = ["BEV", "FCEV"]
+        for l in links_surface_transport:
+            p_nom = network.links.p_nom_opt[l]
+            run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
+            run_stats[l+" o/p capacity nom (GW)"] = (
+                (p_nom*network.links.efficiency[l])/1.0e3)
+            run_stats[l+" elec energy input (TWh)"] = links_e0[l]/1.0e6
+            run_stats[l+" traction energy output (TWh)"] = -links_e1[l]/1.0e6
+            run_stats[l+" capacity factor (%)"] = (
+                links_e0[l]/(p_nom*total_hours))*100.0
 
-        fcev_p = network.links.p_nom_opt["FCEV"]
-        run_stats["FCEV power (GW)"] = fcev_p/1.0e3
-        run_stats["FCEV H2 energy input (TWh)"] = links_e0["FCEV"]/1.0e6
-        run_stats["FCEV traction energy output (TWh)"] = -links_e1["FCEV"]/1.0e6
-        run_stats["FCEV capacity factor (%)"] = (links_e0["FCEV"] / 
-                                                (fcev_p*total_hours))*100.0
+        # bev_p = network.links.p_nom_opt["BEV"]
+        # run_stats["BEV power (GW)"] = bev_p/1.0e3
+        # run_stats["BEV elec energy input (TWh)"] = links_e0["BEV"]/1.0e6
+        # run_stats["BEV traction energy output (TWh)"] = -links_e1["BEV"]/1.0e6
+        # run_stats["BEV capacity factor (%)"] = (links_e0["BEV"] / 
+        #                                         (bev_p*total_hours))*100.0
+
+        # fcev_p = network.links.p_nom_opt["FCEV"]
+        # run_stats["FCEV power (GW)"] = fcev_p/1.0e3
+        # run_stats["FCEV H2 energy input (TWh)"] = links_e0["FCEV"]/1.0e6
+        # run_stats["FCEV traction energy output (TWh)"] = -links_e1["FCEV"]/1.0e6
+        # run_stats["FCEV capacity factor (%)"] = (links_e0["FCEV"] / 
+        #                                         (fcev_p*total_hours))*100.0
        
         ic_p = network.links.p_nom_opt["ic-export"]
         run_stats["IC power (GW)"] = ic_p/1.0e3
@@ -834,20 +846,18 @@ def gather_run_stats(run_config, network):
         battery_store_h = battery_store_e/battery_discharge_p
         run_stats["Battery store time (h)"] = battery_store_h
         #run_stats["Battery storage time (d)"] = battery_store_h/24.0
-
         
         # P2H and H2P represent separate plant with separate capacity factors (0-100%); albeit, with 
         # no independent H2 load on the H2 bus, the sum of their respective capacity factors still 
         # has to be <=100% (as they will never run at the same time - that would always increase
         # system cost, as well as being just silly!)
-        links = ["H2 electrolysis", "H2 OCGT", "H2 CCGT", 'BEV', 'FCEV']
-        for l in links:
-            l_idx =  l
-            run_stats[l+" i/p capacity nom (GW)"] = (network.links.p_nom_opt[l_idx]/1.0e3)
+        links_H2 = ["H2 electrolysis", "H2 OCGT", "H2 CCGT"]
+        for l in links_H2:
+            run_stats[l+" i/p capacity nom (GW)"] = (network.links.p_nom_opt[l]/1.0e3)
             run_stats[l+" o/p capacity nom (GW)"] = (
-                (network.links.p_nom_opt[l_idx]*network.links.efficiency[l_idx])/1.0e3)
+                (network.links.p_nom_opt[l]*network.links.efficiency[l])/1.0e3)
             run_stats[l+" capacity factor (%)"] = (
-                links_e0[l_idx]/(network.links.p_nom_opt[l_idx]*total_hours))*100.0
+                links_e0[l]/(network.links.p_nom_opt[l]*total_hours))*100.0
 
         p2h2p_total_e = links_e0["H2 electrolysis"] - (links_e1["H2 OCGT"]+links_e1["H2 CCGT"]) 
                                                        # OCGT, CCGT both on grid side (e1)
@@ -888,7 +898,16 @@ def gather_run_stats(run_config, network):
         run_stats["System notional cost (B€)"] = network.objective/1.0e9 # Scale (by Nyears) to p.a.?
         run_stats["System notional LCOE (€/MWh)"] = network.objective/total_load_e
 
-        run_stats["Electricity load weighted mean notional shadow price (€/MWh)"] = (
+        buses = ["local-elec-grid", "H2"]
+        for b in buses:
+            run_stats[b+" max notional shadow price (€/MWh)"] = (
+                network.buses_t.marginal_price[b].max())
+            run_stats[b+" unweighted mean notional shadow price (€/MWh)"] = (
+                network.buses_t.marginal_price[b].mean())
+            run_stats[b+" min notional shadow price (€/MWh)"] = (
+                network.buses_t.marginal_price[b].min())
+
+        run_stats["Elec. load weighted mean notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.loads_t.p["local-elec-demand"]).sum())
                                   / network.loads_t.p["local-elec-demand"].sum())
             # This uses the original WHOBS approach, based on shadow
@@ -903,63 +922,66 @@ def gather_run_stats(run_config, network):
             # discussion here:
             # https://groups.google.com/g/pypsa/c/xXHmChzd8o8
             
-        run_stats["Electricity load max notional shadow price (€/MWh)"] = (
-            network.buses_t.marginal_price["local-elec-grid"].max())
-        run_stats["Electricity load min notional shadow price (€/MWh)"] = (
-            network.buses_t.marginal_price["local-elec-grid"].min())
-
-        # All the following are "weighted means"
-        run_stats["Offshore wind notional shadow cost (€/MWh)"] = (
+        # All the following are "weighted means": shadow prices at a bus weighted by some flow to or from that bus 
+        run_stats["Offshore wind notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.generators_t.p["offshore wind"]).sum())
                                   / network.generators_t.p["offshore wind"].sum())
 
-        run_stats["Onshore wind notional shadow cost (€/MWh)"] = (
+        run_stats["Onshore wind notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.generators_t.p["onshore wind"]).sum())
                                   / network.generators_t.p["onshore wind"].sum())
 
-        run_stats["Solar notional shadow cost (€/MWh)"] = (
+        run_stats["Solar notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.generators_t.p["solar"]).sum())
                                   / network.generators_t.p["solar"].sum())
 
-        run_stats["Battery charge notional shadow cost (€/MWh)"] = (
+        run_stats["Battery charge notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["battery charge"]).sum())
                                   / network.links_t.p0["battery charge"].sum())
 
-        run_stats["Battery discharge notional shadow cost (€/MWh)"] = (
+        run_stats["Battery discharge notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["battery discharge"]).sum())
                                   / network.links_t.p1["battery discharge"].sum())
 
-        run_stats["IC export notional shadow cost (€/MWh)"] = (
+        run_stats["IC export notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["ic-export"]).sum())
                                   / network.links_t.p0["ic-export"].sum())
 
-        run_stats["IC import notional shadow cost (€/MWh)"] = (
+        run_stats["IC import notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["ic-import"]).sum())
                                   / network.links_t.p1["ic-import"].sum())
 
-        run_stats["Elec. for H2 notional shadow cost (€/MWh)"] = (
+        run_stats["Elec. for H2 electrolysis notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["H2 electrolysis"]).sum())
                                   / network.links_t.p0["H2 electrolysis"].sum())
 
-        run_stats["H2 for CCGT notional shadow cost (€/MWh)"] = (
+        run_stats["H2 from electrolysis notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["H2"]*network.links_t.p1["H2 electrolysis"]).sum())
+                                  / network.links_t.p1["H2 electrolysis"].sum())
+
+        run_stats["H2 for CCGT notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["H2"]*network.links_t.p0["H2 CCGT"]).sum())
                                   / network.links_t.p0["H2 CCGT"].sum())
 
-        run_stats["Elec. from H2 CCGT notional shadow cost (€/MWh)"] = (
+        run_stats["Elec. from H2 CCGT notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["H2 CCGT"]).sum())
                                   / network.links_t.p1["H2 CCGT"].sum())
 
-        run_stats["H2 for OCGT notional shadow cost (€/MWh)"] = (
+        run_stats["H2 for OCGT notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["H2"]*network.links_t.p0["H2 OCGT"]).sum())
                                   / network.links_t.p0["H2 OCGT"].sum())
 
-        run_stats["Elec. from H2 OCGT notional shadow cost (€/MWh)"] = (
+        run_stats["Elec. from H2 OCGT notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["H2 OCGT"]).sum())
                                   / network.links_t.p1["H2 OCGT"].sum())
 
-        run_stats["H2 notional shadow cost (€/MWh)"] = (
-            ((network.buses_t.marginal_price["H2"]*network.links_t.p1["H2 electrolysis"]).sum())
-                                  / network.links_t.p1["H2 electrolysis"].sum())
+        run_stats["Elec. for BEV notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["BEV"]).sum())
+                                  / network.links_t.p0["BEV"].sum())
+
+        run_stats["H2 for FCEV notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["H2"]*network.links_t.p0["FCEV"]).sum())
+                                  / network.links_t.p0["FCEV"].sum())
 
 
     return run_stats
