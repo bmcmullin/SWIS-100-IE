@@ -37,7 +37,9 @@ config_converters = {
     'assumptions_year' : int,
     'usd_to_eur' : float,
     'constant_elec_load_flag' : bool,
-    'load_year_start' : int,
+    'elec_load_year_start' : int,
+    'transport_load_year_start' : int,
+    'heat_load_year_start' : int,
     'load_scope' : str,
     'snapshot_interval' : int,
     'nuclear_SMR_min_p (GW)' : float,
@@ -269,16 +271,6 @@ transport_load_data_raw = (
 transport_load_data_raw.columns.rename('Total (MWh)',inplace=True)
 assert(not transport_load_data_raw.isnull().values.any())
 
-# Read raw technology assumptions data (will be further
-# processed/refined for each run)
-logger.info("Reading raw technology assumptions data (via assumptions/SWIS.ods)")
-
-assumptions_raw = pd.read_excel('assumptions/SWIS.ods',
-                                usecols=['technology','year','parameter','value','unit'],
-                                index_col=list(range(3)),
-                                header=0,
-                                sheet_name='SWIS').sort_index()
-
 logger.info("Loading space and water heat demand timeseries data (when2heat)")
 
 # when2heat_base_url = 'https://data.open-power-system-data.org/when2heat/2019-08-06/'
@@ -314,6 +306,16 @@ heat_load_data_raw = heat_load_data_raw.dropna()['2008-01-01':]
     # the when2heat upstream data sources?). End result is that
     # we only have this data for the full years 2008-2013
     # inclusive.
+
+# Read raw technology assumptions data (will be further
+# processed/refined for each run)
+logger.info("Reading raw technology assumptions data (via assumptions/SWIS.ods)")
+
+assumptions_raw = pd.read_excel('assumptions/SWIS.ods',
+                                usecols=['technology','year','parameter','value','unit'],
+                                index_col=list(range(3)),
+                                header=0,
+                                sheet_name='SWIS').sort_index()
 
 # Required functions
 
@@ -361,8 +363,6 @@ def solve_network(run_config):
                                       assumptions_year=assumptions_year,
                                       usd_to_eur=run_config['usd_to_eur'])
 
-    load_year_start = int(run_config['load_year_start'])
-
     # Available year(s) for vre (pu) resource data: solar 1985-2015 inclusive, wind 1980-2016
     weather_year_start = int(run_config['weather_year_start'])
     assert(weather_year_start >= 1985)
@@ -409,7 +409,7 @@ def solve_network(run_config):
         elec_load = run_config['constant_elec_load (GW)']*1.0e3 # GW -> MW
     else :
         # Available year(s) for eirgrid load data: 2014-2019 inclusive
-        elec_load_year_start = load_year_start
+        elec_load_year_start = int(run_config['elec_load_year_start'])
         assert(elec_load_year_start >= 2014)
         elec_load_year_end = elec_load_year_start + (Nyears - 1)
         assert(elec_load_year_end <= 2019)
@@ -629,7 +629,7 @@ def solve_network(run_config):
     else :
         # Available year(s) for seai transport data are 1990-2018, but allowing for
         # interpolation, usable range is 1991-2017 inclusive
-        surface_transport_load_year_start = load_year_start
+        surface_transport_load_year_start = int(run_config['transport_load_year_start'])
         assert(surface_transport_load_year_start >= 1991)
         surface_transport_load_year_end = surface_transport_load_year_start + (Nyears - 1)
         assert(surface_transport_load_year_end <= 2017)
@@ -696,7 +696,7 @@ def solve_network(run_config):
         # Available year(s) for when2heat data are 2008-2013 inclusive
         # *Arguably* we should use the configured **weather**
         # *year here as heat demand is weather related!?
-        space_heat_load_year_start = load_year_start
+        space_heat_load_year_start = int(run_config['heat_load_year_start'])
         assert(space_heat_load_year_start >= 2008)
         space_heat_load_year_end = space_heat_load_year_start + (Nyears - 1)
         assert(space_heat_load_year_end <= 2013)
@@ -892,7 +892,7 @@ def gather_run_stats(run_config, network):
         links_e1 = network.links_t.p1.sum() * snapshot_interval
 
         links_final_conversion = ["BEV", "FCEV", "ASHP"]
-        for l in links_surface_transport:
+        for l in links_final_conversion:
             p_nom = network.links.p_nom_opt[l]
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
             run_stats[l+" o/p capacity nom (GW)"] = (
