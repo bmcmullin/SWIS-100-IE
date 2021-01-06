@@ -293,19 +293,35 @@ usecols = ['utc_timestamp',
            'IE_heat_demand_total', 'IE_heat_demand_space', 'IE_heat_demand_water',
            'IE_COP_ASHP_radiator', 'IE_COP_ASHP_water']
 
-heat_load_data_raw = pd.read_csv(
+when2heat_data = pd.read_csv(
     when2heat_data_url,
     delimiter=';',
     decimal=',',
     usecols=usecols,
     index_col='utc_timestamp')
-heat_load_data_raw.index = pd.to_datetime(heat_load_data_raw.index)
-heat_load_data_raw = heat_load_data_raw.dropna()['2008-01-01':]
+when2heat_data.index = pd.to_datetime(when2heat_data.index)
+when2heat_data = when2heat_data.dropna()['2008-01-01':]
     # Discard initial small number of rows for very end of 2007;
     # and trailing NaN rows (presumably due to missing data in
     # the when2heat upstream data sources?). End result is that
     # we only have this data for the full years 2008-2013
     # inclusive.
+
+# For simplicity in the coarse grained modelling, we aggregate
+# space and water heating demand as "low_temp" demand; we further
+# assume only ASHP, and only radiator use for space heating, and
+# calculate an equivalent COP aggregated across both space and
+# water (weighted by the relative demand levels in each
+# snapshot).
+when2heat_data['IE_lo_temp_heat_demand'] = (
+    when2heat_data['IE_heat_demand_space'] + when2heat_data['IE_heat_demand_water'])
+when2heat_data['IE_lo_temp_heat_supply'] = (
+    (when2heat_data['IE_heat_demand_space']/when2heat_data['IE_COP_ASHP_radiator']) +
+    (when2heat_data['IE_heat_demand_water']/when2heat_data['IE_COP_ASHP_water']))
+when2heat_data['IE_COP_ASHP'] = (
+    when2heat_data['IE_lo_temp_heat_demand'] / when2heat_data['IE_lo_temp_heat_supply'])
+when2heat_data=when2heat_data.loc[:,['IE_lo_temp_heat_demand','IE_COP_ASHP']]
+assert(not when2heat_data.isnull().values.any())
 
 # Read raw technology assumptions data (will be further
 # processed/refined for each run)
@@ -685,48 +701,45 @@ def solve_network(run_config):
                     efficiency=assumptions.at["FCEV","efficiency"],
                     capital_cost=assumptions.at["FCEV","fixed"])
 
-### Warning Will Rogerson: unstable, WIP!!
-    # Heat subsystem (space and water heating only as yet: excludes industrial process heat)
-    network.add("Bus","space_heat")
+    # Heat subsystem: low temperature (space and water) heating only as yet: excludes industrial process heat.
+    network.add("Bus","lo_temp_heat")
     
-    # Configure required space_heat_load (constant or timeseries)
-    if (run_config['constant_space_heat_load_flag']) :
-        space_heat_load = run_config['constant_space_heat_load (GW)']*1.0e3 # GW -> MW
+    # Configure required low_temp_heat_load (constant or timeseries) and COP
+    # Available year(s) for when2heat data are 2008-2013 inclusive
+    lo_temp_heat_year_start = int(run_config['heat_year_start'])
+    assert(lo_temp_heat_year_start >= 2008)
+    lo_temp_heat_year_end = lo_temp_heat_year_start + (Nyears - 1)
+    assert(lo_temp_heat_year_end <= 2013)
+
+    lo_temp_heat_load_date_start = "{}-01-01 00:00".format(lo_temp_heat_year_start)
+    lo_temp_heat_load_date_end = "{}-12-31 23:59".format(lo_temp_heat_year_end)
+    lo_temp_heat_data = when2heat_data.loc[lo_temp_heat_load_date_start:lo_temp_heat_load_date_end, ]
+    lo_temp_heat_data = lo_temp_heat_data.resample(str(snapshot_interval)+"H").mean()
+    lo_temp_heat_data = lo_temp_heat_data[~((lo_temp_heat_data.index.month == 2) & (lo_temp_heat_data.index.day == 29))]
+    # Kludge to filter out "leap days" (29th Feb in any year)
+    # https://stackoverflow.com/questions/34966422/remove-leap-year-day-from-pandas-dataframe
+    # Necessary because we want to be able to combine arbitrary load years with
+    # arbitrary weather years...
+    assert(len(lo_temp_heat_data.index) == snapshots.size)
+    ashp_cop = lo_temp_heat_data['IE_COP_ASHP'].values
+
+    if (run_config['constant_lo_temp_heat_load_flag']) :
+        lo_temp_heat_load = run_config['constant_lo_temp_heat_load (GW)']*1.0e3 # GW -> MW
     else :
-        # Available year(s) for when2heat data are 2008-2013 inclusive
-        # *Arguably* we should use the configured **weather**
-        # *year here as heat demand is weather related!?
-        space_heat_load_year_start = int(run_config['heat_load_year_start'])
-        assert(space_heat_load_year_start >= 2008)
-        space_heat_load_year_end = space_heat_load_year_start + (Nyears - 1)
-        assert(space_heat_load_year_end <= 2013)
+        lo_temp_heat_load = lo_temp_heat_data['IE_lo_temp_heat_demand'].values
 
-        space_heat_load_date_start = "{}-01-01 00:00".format(space_heat_load_year_start)
-        space_heat_load_date_end = "{}-12-31 23:59".format(space_heat_load_year_end)
-        space_heat_load = heat_load_data_raw.loc[space_heat_load_date_start:space_heat_load_date_end, 'IE_heat_demand_space']
-        space_heat_load = space_heat_load.resample(str(snapshot_interval)+"H").mean()
-
-        space_heat_load = space_heat_load[~((space_heat_load.index.month == 2) & (space_heat_load.index.day == 29))]
-        # Kludge to filter out "leap days" (29th Feb in any year)
-        # https://stackoverflow.com/questions/34966422/remove-leap-year-day-from-pandas-dataframe
-        # Necessary because we want to be able to combine arbitrary load years with
-        # arbitrary weather years...
-        assert(space_heat_load.count() == snapshots.size)
-        space_heat_load = space_heat_load.values
-
-    network.add("Load","space-heat-demand",
-                bus="space_heat",
-                p_set= space_heat_load)
+    network.add("Load","lo-temp-heat-demand",
+                bus="lo_temp_heat",
+                p_set=lo_temp_heat_load)
 
     network.add("Link",
                     "ASHP",
                     bus0="local-elec-grid",
-                    bus1="space_heat",
+                    bus1="lo_temp_heat",
                     p_nom_extendable=True,
                     p_nom_min = run_config['ASHP_min_p (GW)']*1e3, # GW -> MW
                     p_nom_max = run_config['ASHP_max_p (GW)']*1e3, # GW -> MW
-                    efficiency=2.5, # FIXME: very rough, constant, SPF for functional test only;
-                                    # needs to be timeseries ... can pypsa handle that?
+                    efficiency=ashp_cop,
                     capital_cost=assumptions.at["ASHP","fixed"])
 
     # network.add("Link",
@@ -1085,7 +1098,7 @@ def gather_run_stats(run_config, network):
                                   / network.links_t.p0["ASHP"].sum())
 
         run_stats["Heat final energy from ASHP notional shadow price (€/MWh)"] = (
-            ((network.buses_t.marginal_price["space_heat"]*network.links_t.p1["ASHP"]).sum())
+            ((network.buses_t.marginal_price["lo_temp_heat"]*network.links_t.p1["ASHP"]).sum())
                                   / network.links_t.p1["ASHP"].sum())
 
     return run_stats
