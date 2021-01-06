@@ -742,6 +742,16 @@ def solve_network(run_config):
                     efficiency=ashp_cop,
                     capital_cost=assumptions.at["ASHP","fixed"])
 
+    network.add("Link",
+                    "H2_boiler",
+                    bus0="H2",
+                    bus1="lo_temp_heat",
+                    p_nom_extendable=True,
+                    p_nom_min = run_config['H2_boiler_min_p (GW)']*1e3, # GW -> MW
+                    p_nom_max = run_config['H2_boiler_max_p (GW)']*1e3, # GW -> MW
+                    efficiency = assumptions.at["H2 boiler","efficiency"],
+                    capital_cost=assumptions.at["H2 boiler","fixed"])
+
     # network.add("Link",
     #                 "FCEV", # tacitly includes possibility of HFC shipping!?
     #                 bus0="H2",
@@ -904,7 +914,7 @@ def gather_run_stats(run_config, network):
         links_e0 = network.links_t.p0.sum() * snapshot_interval
         links_e1 = network.links_t.p1.sum() * snapshot_interval
 
-        links_final_conversion = ["BEV", "FCEV", "ASHP"]
+        links_final_conversion = ["BEV", "FCEV", "ASHP", "H2_boiler"]
         for l in links_final_conversion:
             p_nom = network.links.p_nom_opt[l]
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
@@ -1107,5 +1117,13 @@ def gather_run_stats(run_config, network):
         run_stats["Heat final energy from ASHP notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["lo_temp_heat"]*network.links_t.p1["ASHP"]).sum())
                                   / network.links_t.p1["ASHP"].sum())
+
+        run_stats["H2 for H2 boiler notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["H2"]*network.links_t.p0["H2_boiler"]).sum())
+                                  / network.links_t.p0["H2_boiler"].sum())
+
+        run_stats["Heat final energy from H2 boiler notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["lo_temp_heat"]*network.links_t.p1["H2_boiler"]).sum())
+                                  / network.links_t.p1["H2_boiler"].sum())
 
     return run_stats
