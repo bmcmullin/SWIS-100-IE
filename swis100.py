@@ -908,8 +908,15 @@ def gather_run_stats(run_config, network):
         for l in links_final_conversion:
             p_nom = network.links.p_nom_opt[l]
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
-            run_stats[l+" o/p capacity nom (GW)"] = (
-                (p_nom*network.links.efficiency[l])/1.0e3)
+            if (l == "ASHP") :
+                ashp_spf = (
+                    (network.links_t.efficiency["ASHP"] * network.links_t.p1["ASHP"]).sum()
+                    / network.links_t.p1["ASHP"].sum())
+                run_stats[l+" SPF"] = ashp_spf 
+                run_stats[l+" notional o/p capacity nom (GW)"] = ((p_nom*ashp_spf)/1.0e3)
+            else :
+                run_stats[l+" o/p capacity nom (GW)"] = (
+                    (p_nom*network.links.efficiency[l])/1.0e3)
             run_stats[l+" energy input (TWh)"] = links_e0[l]/1.0e6
             run_stats[l+" energy output (TWh)"] = -links_e1[l]/1.0e6
             run_stats[l+" capacity factor (%)"] = (
