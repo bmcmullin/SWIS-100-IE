@@ -271,12 +271,12 @@ transport_load_data_raw = (
 transport_load_data_raw.columns.rename('Total (MWh)',inplace=True)
 assert(not transport_load_data_raw.isnull().values.any())
 
-logger.info("Loading space and water heat demand timeseries data (when2heat)")
+logger.info("Loading low temperature (space and water) heating timeseries data (when2heat)")
 
 # when2heat_base_url = 'https://data.open-power-system-data.org/when2heat/2019-08-06/'
 
 # The when2heat dataset provides high time-resolution estimated
-# timeseries for aggregate national (IE) water and space heating
+# timeseries for aggregate national (here, IE) water and space heating
 # timeseries (in MW), as well as heat pump COP estimates. For
 # full details on the methodology see:
 # https://www.nature.com/articles/s41597-019-0199-y
@@ -583,45 +583,41 @@ def solve_network(run_config):
 
     h2_electrolysis_tech = 'H2 electrolysis ' + run_config['H2_electrolysis_tech']
 
-    network.add("Link",
-                    "H2 electrolysis",
-                    bus1="H2",
-                    bus0="local-elec-grid",
-                    p_nom_extendable=True,
-                    p_nom_max = run_config['H2_electrolysis_max_p (GW)']*1e3, # GW -> MW
-                    efficiency=assumptions.at["H2 electrolysis","efficiency"],
-                    capital_cost=assumptions.at[h2_electrolysis_tech,"fixed"])
+    network.add("Link", "H2 electrolysis",
+                bus1="H2",
+                bus0="local-elec-grid",
+                p_nom_extendable=True,
+                p_nom_max = run_config['H2_electrolysis_max_p (GW)']*1e3, # GW -> MW
+                efficiency=assumptions.at["H2 electrolysis","efficiency"],
+                capital_cost=assumptions.at[h2_electrolysis_tech,"fixed"])
 
-    network.add("Link",
-                     "H2 CCGT",
-                     bus0="H2",
-                     bus1="local-elec-grid",
-                     p_nom_extendable=True,
-                     p_nom_max = run_config['H2_CCGT_max_p (GW)']*1e3, # GW -> MW
-                     efficiency=assumptions.at["H2 CCGT","efficiency"],
-                     capital_cost=assumptions.at["H2 CCGT","fixed"]*assumptions.at["H2 CCGT","efficiency"])  
-                     #NB: fixed (capital) cost for H2 CCGT in assumptions is per MWel (p1 of link)
+    network.add("Link", "H2 CCGT",
+                bus0="H2",
+                bus1="local-elec-grid",
+                p_nom_extendable=True,
+                p_nom_max = run_config['H2_CCGT_max_p (GW)']*1e3, # GW -> MW
+                efficiency=assumptions.at["H2 CCGT","efficiency"],
+                capital_cost=assumptions.at["H2 CCGT","fixed"]*assumptions.at["H2 CCGT","efficiency"])  
+                #NB: fixed (capital) cost for H2 CCGT in assumptions is per MWel (p1 of link)
 
-    network.add("Link",
-                     "H2 OCGT",
-                     bus0="H2",
-                     bus1="local-elec-grid",
-                     p_nom_extendable=True,
-                     p_nom_max = run_config['H2_OCGT_max_p (GW)']*1e3, # GW -> MW
-                     efficiency=assumptions.at["H2 OCGT","efficiency"],
-                     capital_cost=assumptions.at["H2 OCGT","fixed"]*assumptions.at["H2 OCGT","efficiency"])  
-                     #NB: fixed (capital) cost for H2 CCGT in assumptions is per MWel (p1 of link)
+    network.add("Link", "H2 OCGT",
+                bus0="H2",
+                bus1="local-elec-grid",
+                p_nom_extendable=True,
+                p_nom_max = run_config['H2_OCGT_max_p (GW)']*1e3, # GW -> MW
+                efficiency=assumptions.at["H2 OCGT","efficiency"],
+                capital_cost=assumptions.at["H2 OCGT","fixed"]*assumptions.at["H2 OCGT","efficiency"])  
+                #NB: fixed (capital) cost for H2 CCGT in assumptions is per MWel (p1 of link)
 
     h2_storage_tech = 'H2 ' + run_config['H2_storage_tech'] + ' storage'
 
-    network.add("Store",
-                     "H2 store",
-                     bus="H2",
-                     e_nom_extendable=True,
-                     e_nom_max = run_config['H2_store_max_e (TWh)']*1.0e6,
-                         # TWh -> MWh
-                     e_cyclic=True,
-                     capital_cost=assumptions.at[h2_storage_tech,"fixed"])
+    network.add("Store", "H2 store",
+                bus="H2",
+                e_nom_extendable=True,
+                e_nom_max = run_config['H2_store_max_e (TWh)']*1.0e6,
+                # TWh -> MWh
+                e_cyclic=True,
+                capital_cost=assumptions.at[h2_storage_tech,"fixed"])
 
     # Transport subsystem (surface only as yet: excludes aviation)
     network.add("Bus","surface_transport_final")
@@ -681,25 +677,23 @@ def solve_network(run_config):
                 bus="surface_transport_final",
                 p_set= surface_transport_load)
 
-    network.add("Link",
-                    "BEV", # tacitly includes possibility of battery electic shipping!?
-                    bus0="local-elec-grid",
-                    bus1="surface_transport_final",
-                    p_nom_extendable=True,
-                    p_nom_min = run_config['BEV_min_p (GW)']*1e3, # GW -> MW
-                    p_nom_max = run_config['BEV_max_p (GW)']*1e3, # GW -> MW
-                    efficiency=assumptions.at["BEV","efficiency"],
-                    capital_cost=assumptions.at["BEV","fixed"])
+    network.add("Link", "BEV", # tacitly includes possibility of battery electic shipping!?
+                bus0="local-elec-grid",
+                bus1="surface_transport_final",
+                p_nom_extendable=True,
+                p_nom_min = run_config['BEV_min_p (GW)']*1e3, # GW -> MW
+                p_nom_max = run_config['BEV_max_p (GW)']*1e3, # GW -> MW
+                efficiency=assumptions.at["BEV","efficiency"],
+                capital_cost=assumptions.at["BEV","fixed"])
 
-    network.add("Link",
-                    "FCEV", # tacitly includes possibility of HFC shipping!?
-                    bus0="H2",
-                    bus1="surface_transport_final",
-                    p_nom_extendable=True,
-                    p_nom_min = run_config['FCEV_min_p (GW)']*1e3, # GW -> MW
-                    p_nom_max = run_config['FCEV_max_p (GW)']*1e3, # GW -> MW
-                    efficiency=assumptions.at["FCEV","efficiency"],
-                    capital_cost=assumptions.at["FCEV","fixed"])
+    network.add("Link", "FCEV", # tacitly includes possibility of HFC shipping!?
+                bus0="H2",
+                bus1="surface_transport_final",
+                p_nom_extendable=True,
+                p_nom_min = run_config['FCEV_min_p (GW)']*1e3, # GW -> MW
+                p_nom_max = run_config['FCEV_max_p (GW)']*1e3, # GW -> MW
+                efficiency=assumptions.at["FCEV","efficiency"],
+                capital_cost=assumptions.at["FCEV","fixed"])
 
     # Heat subsystem: low temperature (space and water) heating only as yet: excludes industrial process heat.
     network.add("Bus","lo_temp_heat")
@@ -732,42 +726,23 @@ def solve_network(run_config):
                 bus="lo_temp_heat",
                 p_set=lo_temp_heat_load)
 
-    network.add("Link",
-                    "ASHP",
-                    bus0="local-elec-grid",
-                    bus1="lo_temp_heat",
-                    p_nom_extendable=True,
-                    p_nom_min = run_config['ASHP_min_p (GW)']*1e3, # GW -> MW
-                    p_nom_max = run_config['ASHP_max_p (GW)']*1e3, # GW -> MW
-                    efficiency=ashp_cop,
-                    capital_cost=assumptions.at["ASHP","fixed"])
+    network.add("Link", "ASHP",
+                bus0="local-elec-grid",
+                bus1="lo_temp_heat",
+                p_nom_extendable=True,
+                p_nom_min = run_config['ASHP_min_p (GW)']*1e3, # GW -> MW
+                p_nom_max = run_config['ASHP_max_p (GW)']*1e3, # GW -> MW
+                efficiency=ashp_cop,
+                capital_cost=assumptions.at["ASHP","fixed"])
 
-    network.add("Link",
-                    "H2_boiler",
-                    bus0="H2",
-                    bus1="lo_temp_heat",
-                    p_nom_extendable=True,
-                    p_nom_min = run_config['H2_boiler_min_p (GW)']*1e3, # GW -> MW
-                    p_nom_max = run_config['H2_boiler_max_p (GW)']*1e3, # GW -> MW
-                    efficiency = assumptions.at["H2 boiler","efficiency"],
-                    capital_cost=assumptions.at["H2 boiler","fixed"])
-
-    # network.add("Link",
-    #                 "FCEV", # tacitly includes possibility of HFC shipping!?
-    #                 bus0="H2",
-    #                 bus1="surface_transport_final",
-    #                 p_nom_extendable=True,
-    #                 p_nom_min = run_config['FCEV_min_p (GW)']*1e3, # GW -> MW
-    #                 p_nom_max = run_config['FCEV_max_p (GW)']*1e3, # GW -> MW
-    #                 efficiency=assumptions.at["FCEV","efficiency"],
-    #                 capital_cost=assumptions.at["FCEV","fixed"])
-
-    #network.add("Bus","water_heat")
-
-
-
-###
-    
+    network.add("Link", "H2_boiler",
+                bus0="H2",
+                bus1="lo_temp_heat",
+                p_nom_extendable=True,
+                p_nom_min = run_config['H2_boiler_min_p (GW)']*1e3, # GW -> MW
+                p_nom_max = run_config['H2_boiler_max_p (GW)']*1e3, # GW -> MW
+                efficiency = assumptions.at["H2 boiler","efficiency"],
+                capital_cost=assumptions.at["H2 boiler","fixed"])
 
     # Global constraints:
     
