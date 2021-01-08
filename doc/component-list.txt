@@ -1,0 +1,46 @@
+=== Electricity
+
+"Generator","solar"
+"Generator","offshore wind"
+"Generator","onshore wind"
+"Generator","nuclear-SMR"
+
+"Bus","local-elec-grid"
+
+"Load","local-elec-demand"
+
+"Link","ic-export"
+# "Bus","remote-elec-grid"
+"Store","remote-elec-grid-buffer"
+"Link","ic-import"
+
+"Link","battery charge"
+# "Bus","battery"
+"Store","battery storage"
+"Link","battery discharge"
+
+=== H2
+
+"Bus", "H2"
+"Link", "H2 CCGT"
+"Link", "H2 electrolysis"
+"Link", "H2 OCGT"
+"Store", "H2 store"
+
+=== Transport (surface)
+
+"Link", "BEV"
+"Link", "FCEV"
+"Bus","surface_transport_final"
+"Load","surface-transport-demand"
+
+=== Heating (low temperature
+
+"Link", "ASHP"
+"Link", "H2_boiler"
+"Bus","lo_temp_heat"
+"Load","lo-temp-heat-demand"
+
+
+
+
