@@ -109,7 +109,7 @@ solar_pv_csv_url = r_ninja_base_url + solar_pv_csv_file
 solar_pu_raw = pd.read_csv(solar_pv_csv_url,
                            usecols=['time','IE'],
                            index_col='time',
-                           parse_dates=True)
+                           parse_dates=True).tz_localize('UTC')
 
 #wind_zip_file = 'ninja_europe_wind_v1.1.zip'
 #wind_zip_url = r_ninja_base_url + wind_zip_file
@@ -121,7 +121,7 @@ wind_csv_url = r_ninja_base_url + wind_csv_file
 wind_pu_raw = pd.read_csv(wind_csv_url,
                           usecols=['time','IE_ON','IE_OFF'],
                           index_col='time',
-                          parse_dates=True)
+                          parse_dates=True).tz_localize('UTC')
 
 # ### IE/NI electricity load (demand) data
 logger.info("Reading electricity demand timeseries data (via eirgrid)")
@@ -401,11 +401,12 @@ def solve_network(run_config):
 
     network = pypsa.Network()
 
-    snaps_df = pd.date_range("{}-01-01".format(weather_year_start),
+    snapshots_df = pd.date_range("{}-01-01".format(weather_year_start),
                               "{}-12-31 23:00".format(weather_year_end),
-                              freq=str(snapshot_interval)+"H").to_frame()
+                              freq=str(snapshot_interval)+"H", tz='UTC').to_frame()
 
-    snapshots = snaps_df[~((snaps_df.index.month == 2) & (snaps_df.index.day == 29))].index
+    # Filter out leap days...
+    snapshots = snapshots_df[~((snapshots_df.index.month == 2) & (snapshots_df.index.day == 29))].index
 
     #print(snapshots)
     
@@ -710,7 +711,6 @@ def solve_network(run_config):
     # Necessary because we want to be able to combine arbitrary load years with
     # arbitrary weather years...
     assert(len(lo_temp_heat_data.index) == snapshots.size)
-    ashp_cop = lo_temp_heat_data['IE_COP_ASHP'].values
 
     if (run_config['constant_lo_temp_heat_load_flag']) :
         lo_temp_heat_load = run_config['constant_lo_temp_heat_load (GW)']*1.0e3 # GW -> MW
@@ -727,8 +727,13 @@ def solve_network(run_config):
                 p_nom_extendable=True,
                 p_nom_min = run_config['ASHP_min_p (GW)']*1e3, # GW -> MW
                 p_nom_max = run_config['ASHP_max_p (GW)']*1e3, # GW -> MW
-                efficiency=ashp_cop,
+                efficiency=1.0, # NB: RE addition provided by ASHP_RE *generator*, coupled via custom constraint
                 capital_cost=assumptions.at["ASHP","fixed"])
+
+    network.add("Generator","ASHP_RE",
+            bus="lo_temp_heat",
+            p_nom=np.inf # Actual dispatch coupled to ASHP link via custom constraint
+           )
 
     network.add("Link", "H2_boiler",
                 bus0="H2",
@@ -741,26 +746,36 @@ def solve_network(run_config):
 
     # Custom constraints:
     
-    # Interconnector import and export links are constrained so that rated power capacity at the 
-    # *input* side (p0) is equal for both directions; so max available *output* power (p1) will 
-    # be less, in both directions, via the configured efficiency.
-    
-    # Battery charge and discharge links are constrained so that rated power capacity at the 
-    # network/grid bus (as opposed to the store bus) is equal for both charge and discharge.
-    # (The implies that the rated power on the *input* side of the *discharge* link will be
-    # correspondingly higher, via the configured efficiency.)
-    
     def extra_functionality(network,snapshots):
         link_p_nom = get_var(network, "Link", "p_nom")
 
+        # Interconnector import and export links are constrained so that rated power capacity at the 
+        # *input* side (p0) is equal for both directions; so max available *output* power (p1) will 
+        # be less, in both directions, via the configured efficiency.
         lhs = linexpr((1.0, link_p_nom["ic-export"]),
                        (-1.0, link_p_nom["ic-import"]))
         define_constraints(network, lhs, "=", 0.0, 'Link', 'ic_ratio')
 
+        # Battery charge and discharge links are constrained so that rated power capacity at the 
+        # network/grid bus (as opposed to the store bus) is equal for both charge and discharge.
+        # (The implies that the rated power on the *input* side of the *discharge* link will be
+        # correspondingly higher, via the configured efficiency.)
         lhs = linexpr((1.0,link_p_nom["battery charge"]),
                       (-network.links.loc["battery discharge", "efficiency"],
                        link_p_nom["battery discharge"]))
         define_constraints(network, lhs, "=", 0.0, 'Link', 'battery_charger_ratio')
+
+        # ASHP Link and ASHP_RE Generator are coupled together so that the amount of environmental
+        # heat "pumped" is determined by the amount of electricity flowing into the ASHP link modulo
+        # the (snapshot-specific) COP, here coded via the series ashp_RE_factor.
+        ashp_cop = lo_temp_heat_data['IE_COP_ASHP']
+        ashp_RE_factor = ashp_cop - 1.0
+        link_p = get_var(network, "Link", "p")
+        gen_p = get_var(network, "Generator", "p")
+
+        lhs = linexpr((ashp_RE_factor, link_p["ASHP"]),
+                       (-1.0, gen_p["ASHP_RE"]))
+        define_constraints(network, lhs, "=", 0.0, 'Link', 'ASHP RE')
 
       
     if solver_name == "gurobi":
@@ -771,7 +786,6 @@ def solve_network(run_config):
                           "FeasibilityTol": 1.e-6 }
     else:
         solver_options = {}
-
 
     network.consistency_check()
 
@@ -876,7 +890,7 @@ def gather_run_stats(run_config, network):
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
             if (l == "ASHP") :
                 ashp_spf = (
-                    (network.links_t.efficiency["ASHP"] * network.links_t.p1["ASHP"]).sum()
+                    (lo_temp_heat_data['IE_COP_ASHP'] * network.links_t.p1["ASHP"]).sum()
                     / network.links_t.p1["ASHP"].sum())
                 run_stats[l+" SPF"] = ashp_spf 
                 run_stats[l+" notional o/p capacity nom (GW)"] = ((p_nom*ashp_spf)/1.0e3)
