@@ -9,11 +9,8 @@ import warnings
 
 import pypsa
 
-# Allow use of pyomo=False version of lopf() extra_functionality
+# Support use of lopf() extra_functionality() [pyomo=False version] 
 from pypsa.linopt import get_var, linexpr, define_constraints
-
-# Allow use of pyomo=True version of lopf() extra_functionality
-from pyomo.environ import Constraint
 
 import numpy as np
 import pandas as pd
@@ -32,7 +29,6 @@ config_converters = {
     # Arguably, this information should be put in the spreadsheet file and read from there
     # as a preliminary step... but this works for the moment.
 
-    'use_pyomo' : bool,
     'solver_name' : str,
     'assumptions_year' : int,
     'usd_to_eur' : float,
@@ -369,7 +365,6 @@ def prepare_assumptions(Nyears=1,usd_to_eur=1/1.2,assumptions_year=2020):
 def solve_network(run_config):
 
     snapshot_interval = int(run_config['snapshot_interval'])
-    use_pyomo = bool(run_config['use_pyomo'])
     solver_name = bool(run_config['solver_name'])
     Nyears = int(run_config['Nyears'])
     assumptions_year = int(run_config['assumptions_year'])
@@ -744,7 +739,7 @@ def solve_network(run_config):
                 efficiency = assumptions.at["H2 boiler","efficiency"],
                 capital_cost=assumptions.at["H2 boiler","fixed"])
 
-    # Global constraints:
+    # Custom constraints:
     
     # Interconnector import and export links are constrained so that rated power capacity at the 
     # *input* side (p0) is equal for both directions; so max available *output* power (p1) will 
@@ -756,30 +751,16 @@ def solve_network(run_config):
     # correspondingly higher, via the configured efficiency.)
     
     def extra_functionality(network,snapshots):
-        if use_pyomo :
-            def ic(model):
-                return (model.link_p_nom["ic-export"] 
-                        == model.link_p_nom["ic-import"])
+        link_p_nom = get_var(network, "Link", "p_nom")
 
-            network.model.ic = Constraint(rule=ic)
+        lhs = linexpr((1.0, link_p_nom["ic-export"]),
+                       (-1.0, link_p_nom["ic-import"]))
+        define_constraints(network, lhs, "=", 0.0, 'Link', 'ic_ratio')
 
-            def battery(model):
-                return (model.link_p_nom["battery charge"] 
-                        == (model.link_p_nom["battery discharge"] * 
-                            network.links.at["battery charge","efficiency"]))
-            network.model.battery = Constraint(rule=battery)
-
-        else : # not use_pyomo
-            link_p_nom = get_var(network, "Link", "p_nom")
-
-            lhs = linexpr((1.0, link_p_nom["ic-export"]),
-                           (-1.0, link_p_nom["ic-import"]))
-            define_constraints(network, lhs, "=", 0.0, 'Link', 'ic_ratio')
- 
-            lhs = linexpr((1.0,link_p_nom["battery charge"]),
-                          (-network.links.loc["battery discharge", "efficiency"],
-                           link_p_nom["battery discharge"]))
-            define_constraints(network, lhs, "=", 0.0, 'Link', 'battery_charger_ratio')
+        lhs = linexpr((1.0,link_p_nom["battery charge"]),
+                      (-network.links.loc["battery discharge", "efficiency"],
+                       link_p_nom["battery discharge"]))
+        define_constraints(network, lhs, "=", 0.0, 'Link', 'battery_charger_ratio')
 
       
     if solver_name == "gurobi":
@@ -796,7 +777,7 @@ def solve_network(run_config):
 
     network.lopf(solver_name=run_config['solver_name'],
                   solver_options=solver_options,
-                  pyomo=use_pyomo,
+                  pyomo=False,
                   extra_functionality=extra_functionality)
 
     return network
