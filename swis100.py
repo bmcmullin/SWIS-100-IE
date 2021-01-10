@@ -727,15 +727,22 @@ def solve_network(run_config):
                 p_nom_extendable=True,
                 p_nom_min = run_config['ASHP_min_p (GW)']*1e3, # GW -> MW
                 p_nom_max = run_config['ASHP_max_p (GW)']*1e3, # GW -> MW
-                efficiency=1.0, # NB: RE addition provided by ASHP_RE *generator*, coupled via custom constraint
+                efficiency= lo_temp_heat_data['IE_COP_ASHP'],
+                    # NB: generally > 1.0, indicating tacit harvest of environmental heat energy
                 capital_cost=assumptions.at["ASHP","fixed"])
-    network.links['COP'] = object # Non-standard hack to create column for (possible) COP timeseries
-    network.links.at['ASHP', 'COP'] = lo_temp_heat_data['IE_COP_ASHP']
 
-    network.add("Generator","ASHP_RE",
-            bus="lo_temp_heat",
-            p_nom=np.inf # Actual dispatch coupled to ASHP link via custom constraint
-           )
+
+    # ## DEFUNCT: legacy representation of harvest of
+    # environmental heat energy via an explicit Generator...
+    #
+    # network.links['COP'] = object
+    #     # Non-standard hack to create column for (possible) COP timeseries
+    # network.links.at['ASHP', 'COP'] = lo_temp_heat_data['IE_COP_ASHP']
+
+    #network.add("Generator","ASHP_RE",
+    #        bus="lo_temp_heat",
+    #        p_nom=np.inf # Actual dispatch coupled to ASHP link via custom constraint
+    #       )
 
     network.add("Link", "H2_boiler",
                 bus0="H2",
@@ -767,16 +774,21 @@ def solve_network(run_config):
                        link_p_nom["battery discharge"]))
         define_constraints(network, lhs, "=", 0.0, 'Link', 'battery_charger_ratio')
 
-        # ASHP Link and ASHP_RE Generator are coupled together so that the amount of environmental
-        # heat "pumped" is determined by the amount of electricity flowing into the ASHP link modulo
-        # the (snapshot-specific) COP, here coded via the series ashp_RE_factor.
-        ashp_cop = network.links.at['ASHP','COP']
-        link_p = get_var(network, "Link", "p")
-        gen_p = get_var(network, "Generator", "p")
+        # ## DEFUNCT: legacy representation of harvest of
+        # environmental heat energy via an explicit Generator.
+        # ASHP Link and ASHP_RE Generator are coupled together so
+        # that the amount of environmental heat "pumped" is
+        # determined by the amount of electricity flowing into
+        # the ASHP link modulo the (snapshot-specific) COP, here
+        # coded via the series ashp_RE_factor.
+        
+        # ashp_cop = network.links.at['ASHP','COP']
+        # link_p = get_var(network, "Link", "p")
+        # gen_p = get_var(network, "Generator", "p")
 
-        lhs = linexpr(((ashp_cop - 1.0), link_p["ASHP"]),
-                       (-1.0, gen_p["ASHP_RE"]))
-        define_constraints(network, lhs, "=", 0.0, 'Link', 'ASHP RE')
+        # lhs = linexpr(((ashp_cop - 1.0), link_p["ASHP"]),
+        #               (-1.0, gen_p["ASHP_RE"]))
+        # define_constraints(network, lhs, "=", 0.0, 'Link', 'ASHP RE')
 
       
     if solver_name == "gurobi":
@@ -821,30 +833,55 @@ def gather_run_stats(run_config, network):
         # etc). This WILL break if/when we introduce
         # "pseudo-energy carriers", specifically including CO2...
         
-        # Aggregate "final" energy use (across all pypsa "load" components)
+        # Stash some preliminary data as extra columns in network components
+
+        network.loads['e'] = (network.loads_t.p.sum() * snapshot_interval)
+
+        network.generators['avail_e'] = (
+            network.generators_t.p_max_pu.multiply(network.generators.p_nom_opt).sum() 
+            * snapshot_interval)
+        network.generators['dispatched_e'] = network.generators_t.p.sum() * snapshot_interval
+       
+        network.links['e0'] = network.links_t.p0.sum() * snapshot_interval
+        network.links['e1'] = network.links_t.p1.sum() * snapshot_interval
+        links_net_e = -(network.links['e1'] + network.links['e0'])
+        network.links['gain_e'] = links_net_e.clip(lower=0.0)
+            # +ve => Gain/tacit Generator (typically environmental heat via HP)
+        network.links['loss_e'] = links_net_e.clip(upper=0.0)
+            # -ve -> Loss/tacit Load
+
+        # network.generators_t.p_max_pu is not returned by lopf()
+        # for gens with static p_max_pu (since it doesn't change
+        # in time) but we want to do various generic calculations
+        # for *all* generators using this so add it in for such
+        # generators, if any...
+        for g in network.generators.index :
+            if (not(g in network.generators_t.p_max_pu.columns)) :
+                network.generators_t.p_max_pu[g] = network.generators.at[g,'p_max_pu']
+
+        # Summary stats on aggregate "final" energy use (across
+        # all pypsa "load" components)
         max_load_p = network.loads_t.p.sum(axis='columns').max()
         mean_load_p = network.loads_t.p.sum(axis='columns').mean()
         min_load_p = network.loads_t.p.sum(axis='columns').min()
 
-        for g in network.generators.index :
-            if (not(g in network.generators_t.p_max_pu.columns)) :
-                # network.generators_t.p_max_pu is not returned
-                # by lopf() for gens with static p_max_pu (since
-                # it doesn't change in time) but we want to do
-                # various generic calculations for *all*
-                # generators using this so add it in for such
-                # generators, if any...
-                network.generators_t.p_max_pu[g] = network.generators.at[g,'p_max_pu']
-
-        total_load_e = (network.loads_t.p.sum().sum() * snapshot_interval)
-        available_e = (network.generators_t.p_max_pu.multiply(network.generators.p_nom_opt).sum() 
-            * snapshot_interval)
-        total_available_e = available_e.sum()
-        dispatched_e = network.generators_t.p.sum() * snapshot_interval
-        total_dispatched_e = dispatched_e.sum()
-        undispatched_e = (available_e - dispatched_e)
-        total_undispatched_e = undispatched_e.sum()
-        undispatched_frac = undispatched_e/available_e
+        #total_load_e = (network.loads_t.p.sum().sum() * snapshot_interval)
+        total_load_e = network.loads['e'].sum()
+        #available_e = (network.generators_t.p_max_pu.multiply(network.generators.p_nom_opt).sum() 
+        #    * snapshot_interval)
+        #total_available_e = available_e.sum()
+        total_available_e = network.generators['avail_e'].sum()
+        #dispatched_e = network.generators_t.p.sum() * snapshot_interval
+        #total_dispatched_e = dispatched_e.sum()
+        total_dispatched_e =  network.generators['dispatched_e'].sum()
+        total_generated_e = total_dispatched_e + network.links['gain_e'].sum()
+        total_losses_e = -network.links['loss_e'].sum()
+        total_consumed_e = total_load_e + total_losses_e
+        assert((total_generated_e - total_consumed_e) < 1.0) # Notional tolerate on system balance, MWh
+        #undispatched_e = (available_e - dispatched_e)
+        #total_undispatched_e = undispatched_e.sum()
+        total_undispatched_e = total_available_e - total_dispatched_e 
+        #undispatched_frac = undispatched_e/available_e
 
         run_stats["System total load (TWh)"] = total_load_e/1.0e6
         run_stats["System mean load (GW)"] = mean_load_p/1.0e3
@@ -853,62 +890,76 @@ def gather_run_stats(run_config, network):
         run_stats["System dispatched (TWh)"] = total_dispatched_e/1.0e6
         run_stats["System dispatched down (TWh)"] = total_undispatched_e/1.0e6
         run_stats["System dispatched down (%)"] = (total_undispatched_e/total_available_e)*100.0
-        run_stats["System losses (TWh)"] = (total_dispatched_e-total_load_e)/1.0e6
-        run_stats["System efficiency gross (%)"] = (total_load_e/total_available_e)*100.0
+
+        run_stats["System generated (TWh)"] = total_generated_e/1.0e6 # Includes "link gains" - essentially HP
+        run_stats["System losses (TWh)"] = total_losses_e/1.0e6
+        #run_stats["System efficiency gross (%)"] = (total_load_e/total_available_e)*100.0
             # "gross" includes dispatch down
-        run_stats["System efficiency net (%)"] = (total_load_e/total_dispatched_e)*100.0
+        run_stats["System efficiency (%)"] = (total_load_e/total_generated_e)*100.0
             # "net" of dispatch down
 
         for l in network.loads.index :
-            total_e = network.loads_t.p[l].sum() * snapshot_interval
-            run_stats[l+" total_e (TWh)"] = (total_e/1.0e6)
+            #total_e = network.loads_t.p[l].sum() * snapshot_interval
+            run_stats[l+" total_e (TWh)"] = (total_load_e/1.0e6)
             run_stats[l+" max_p (GW)"] = network.loads_t.p[l].max()/1.0e3
-            run_stats[l+" mean_p (GW)"] = (total_e/(total_hours*1.0e3))
+            run_stats[l+" mean_p (GW)"] = (total_load_e/(total_hours*1.0e3))
             run_stats[l+" min_p (GW)"] = network.loads_t.p[l].min()/1.0e3
 
         for g in network.generators.index :
             # FIXME: add calculation of "min" LCOE for all gens (based on 100% capacity running)
             # Note that this doesn't depend on lopf() results - it is statically determined by
             # fixed and marginal costs of each gen.
+            avail_e = network.generators.at[g,'avail_e']
+            dispatched_e = network.generators.at[g,'dispatched_e']
+            undispatched_e = avail_e - dispatched_e
             run_stats[g+" capacity nom (GW)"] = (
                 network.generators.p_nom_opt[g]/1.0e3)
-            run_stats[g+" available (TWh)"] = available_e[g]/1.0e6
-            run_stats[g+" dispatched (TWh)"] = dispatched_e[g]/1.0e6
-            run_stats[g+" penetration (%)"] = (dispatched_e[g]/total_dispatched_e)*100.0 
-            run_stats[g+" dispatched down (TWh)"] = (undispatched_e[g])/1.0e6
-            run_stats[g+" dispatched down (%)"] = (undispatched_frac[g])*100.0
+            run_stats[g+" available (TWh)"] = avail_e/1.0e6
+            run_stats[g+" dispatched (TWh)"] = dispatched_e/1.0e6
+            run_stats[g+" penetration (%)"] = (dispatched_e/total_dispatched_e)*100.0 
+            run_stats[g+" dispatched down (TWh)"] = undispatched_e/1.0e6
+            run_stats[g+" dispatched down (%)"] = (undispatched_e/avail_e)*100.0
             run_stats[g+" capacity factor max (%)"] = (
                 network.generators_t.p_max_pu[g].mean())*100.0
             run_stats[g+" capacity factor act (%)"] = (
-                dispatched_e[g]/(network.generators.p_nom_opt[g]*total_hours))*100.0
+                dispatched_e/(network.generators.p_nom_opt[g]*total_hours))*100.0
 
-        links_e0 = network.links_t.p0.sum() * snapshot_interval
-        links_e1 = network.links_t.p1.sum() * snapshot_interval
+        #links_e0 = network.links_t.p0.sum() * snapshot_interval
+        #links_e1 = network.links_t.p1.sum() * snapshot_interval
 
         links_final_conversion = ["BEV", "FCEV", "ASHP", "H2_boiler"]
         for l in links_final_conversion:
             p_nom = network.links.p_nom_opt[l]
+            e0=network.links.at[l,'e0']
+            e1=network.links.at[l,'e1']
+            gain_e=network.links.at[l,'gain_e']
+            loss_e=-network.links.at[l,'loss_e']
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
-            if (l == "ASHP") :
-                ashp_cop = network.links.at['ASHP','COP']
-                ashp_spf = (
-                    (ashp_cop * network.links_t.p1["ASHP"]).sum()
-                    / network.links_t.p1["ASHP"].sum())
-                run_stats[l+" SPF"] = ashp_spf 
-                run_stats[l+" notional o/p capacity nom (GW)"] = ((p_nom*ashp_spf)/1.0e3)
+            #run_stats[l+" energy input (TWh)"] = links_e0[l]/1.0e6
+            run_stats[l+" energy input (TWh)"] = e0/1.0e6
+            run_stats[l+" energy output (TWh)"] = -e1/1.0e6
+            run_stats[l+" energy gain (TWh)"] = gain_e/1.0e6
+            run_stats[l+" energy loss (TWh)"] = loss_e/1.0e6
+            run_stats[l+" capacity factor (%)"] = (
+                e0/(p_nom*total_hours))*100.0
+            if (gain_e > 0.0) : # Presume HP?
+                #ashp_cop = network.links.at['ASHP','COP']
+                #ashp_spf = (
+                #    (ashp_cop * network.links_t.p1["ASHP"]).sum()
+                #    / network.links_t.p1["ASHP"].sum())
+                #run_stats[l+" SPF"] = ashp_spf
+                spf = (-e1)/e0
+                run_stats[l+" SPF"] = spf
+                run_stats[l+" notional o/p capacity nom (GW)"] = ((p_nom*spf)/1.0e3)
             else :
                 run_stats[l+" o/p capacity nom (GW)"] = (
                     (p_nom*network.links.efficiency[l])/1.0e3)
-            run_stats[l+" energy input (TWh)"] = links_e0[l]/1.0e6
-            run_stats[l+" energy output (TWh)"] = -links_e1[l]/1.0e6
-            run_stats[l+" capacity factor (%)"] = (
-                links_e0[l]/(p_nom*total_hours))*100.0
        
         ic_p = network.links.p_nom_opt["ic-export"]
         run_stats["IC power (GW)"] = ic_p/1.0e3
             # NB: interconnector export and import p_nom are constrained to be equal
             # (at the input side of the respective links)
-        ic_total_e = links_e0["ic-export"] - links_e1["ic-import"] # On IE grid side
+        ic_total_e = network.links.at["ic-export","e0"] + (-network.links.at["ic-import","e1"]) # On IE grid side
         run_stats["IC transferred (TWh)"] = ic_total_e/1.0e6
         run_stats["IC capacity factor (%)"] = ic_total_e/(
             network.links.p_nom_opt["ic-export"]*total_hours)*100.0
@@ -922,7 +973,8 @@ def gather_run_stats(run_config, network):
         battery_charge_p = network.links.p_nom_opt["battery charge"]
         run_stats["Battery charge/discharge capacity nom (MW)"] = battery_charge_p
             # NB: battery charge and discharge p_nom are constrained to be equal (grid side)
-        battery_total_e = links_e0["battery charge"] - links_e1["battery discharge"] # on grid side
+        battery_total_e = (network.links.at["battery charge","e0"] +
+                           (-network.links.at["battery discharge","e1"])) # on grid side
         run_stats["Battery transferred (GWh)"] = battery_total_e/1.0e3
         run_stats["Battery capacity factor (%)"] = (battery_total_e/(
             network.links.p_nom_opt["battery charge"]*total_hours))*100.0
@@ -943,10 +995,12 @@ def gather_run_stats(run_config, network):
             run_stats[l+" o/p capacity nom (GW)"] = (
                 (network.links.p_nom_opt[l]*network.links.efficiency[l])/1.0e3)
             run_stats[l+" capacity factor (%)"] = (
-                links_e0[l]/(network.links.p_nom_opt[l]*total_hours))*100.0
+                network.links.at[l,'e0']/(network.links.p_nom_opt[l]*total_hours))*100.0
 
-        p2h2p_total_e = links_e0["H2 electrolysis"] - (links_e1["H2 OCGT"]+links_e1["H2 CCGT"]) 
-                                                       # OCGT, CCGT both on grid side (e1)
+        p2h2p_total_e = (network.links.at["H2 electrolysis","e0"] +
+                         (-(network.links.at["H2 OCGT","e1"]
+                            + network.links.at["H2 CCGT","e1"]))) 
+                        # OCGT, CCGT both on grid side (e1)
         run_stats["P2H2P transferred (TWh)"] = p2h2p_total_e/1.0e6    
         h2_store_e = network.stores.e_nom_opt["H2 store"]
         run_stats["H2 store (TWh)"] = (h2_store_e/1.0e6)
