@@ -729,6 +729,8 @@ def solve_network(run_config):
                 p_nom_max = run_config['ASHP_max_p (GW)']*1e3, # GW -> MW
                 efficiency=1.0, # NB: RE addition provided by ASHP_RE *generator*, coupled via custom constraint
                 capital_cost=assumptions.at["ASHP","fixed"])
+    network.links['COP'] = object # Non-standard hack to create column for (possible) COP timeseries
+    network.links.at['ASHP', 'COP'] = lo_temp_heat_data['IE_COP_ASHP']
 
     network.add("Generator","ASHP_RE",
             bus="lo_temp_heat",
@@ -768,12 +770,11 @@ def solve_network(run_config):
         # ASHP Link and ASHP_RE Generator are coupled together so that the amount of environmental
         # heat "pumped" is determined by the amount of electricity flowing into the ASHP link modulo
         # the (snapshot-specific) COP, here coded via the series ashp_RE_factor.
-        ashp_cop = lo_temp_heat_data['IE_COP_ASHP']
-        ashp_RE_factor = ashp_cop - 1.0
+        ashp_cop = network.links.at['ASHP','COP']
         link_p = get_var(network, "Link", "p")
         gen_p = get_var(network, "Generator", "p")
 
-        lhs = linexpr((ashp_RE_factor, link_p["ASHP"]),
+        lhs = linexpr(((ashp_cop - 1.0), link_p["ASHP"]),
                        (-1.0, gen_p["ASHP_RE"]))
         define_constraints(network, lhs, "=", 0.0, 'Link', 'ASHP RE')
 
@@ -889,8 +890,9 @@ def gather_run_stats(run_config, network):
             p_nom = network.links.p_nom_opt[l]
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
             if (l == "ASHP") :
+                ashp_cop = network.links.at['ASHP','COP']
                 ashp_spf = (
-                    (lo_temp_heat_data['IE_COP_ASHP'] * network.links_t.p1["ASHP"]).sum()
+                    (ashp_cop * network.links_t.p1["ASHP"]).sum()
                     / network.links_t.p1["ASHP"].sum())
                 run_stats[l+" SPF"] = ashp_spf 
                 run_stats[l+" notional o/p capacity nom (GW)"] = ((p_nom*ashp_spf)/1.0e3)
