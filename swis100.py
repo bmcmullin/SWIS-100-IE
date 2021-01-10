@@ -900,9 +900,10 @@ def gather_run_stats(run_config, network):
 
         for l in network.loads.index :
             #total_e = network.loads_t.p[l].sum() * snapshot_interval
-            run_stats[l+" total_e (TWh)"] = (total_load_e/1.0e6)
+            total_e = network.loads.at[l,'e']
+            run_stats[l+" total_e (TWh)"] = (total_e/1.0e6)
             run_stats[l+" max_p (GW)"] = network.loads_t.p[l].max()/1.0e3
-            run_stats[l+" mean_p (GW)"] = (total_load_e/(total_hours*1.0e3))
+            run_stats[l+" mean_p (GW)"] = (total_e/(total_hours*1.0e3))
             run_stats[l+" min_p (GW)"] = network.loads_t.p[l].min()/1.0e3
 
         for g in network.generators.index :
