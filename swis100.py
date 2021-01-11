@@ -837,17 +837,27 @@ def gather_run_stats(run_config, network):
 
         network.loads['e'] = (network.loads_t.p.sum() * snapshot_interval)
 
-        network.generators['avail_e'] = (
+        network.generators['e_avail'] = (
             network.generators_t.p_max_pu.multiply(network.generators.p_nom_opt).sum() 
             * snapshot_interval)
-        network.generators['dispatched_e'] = network.generators_t.p.sum() * snapshot_interval
+        network.generators['e_dispatched'] = network.generators_t.p.sum() * snapshot_interval
        
+
+        links_net_p = -(network.links_t.p0 + network.links_t.p1)
+        network.links_t['p_gain'] = links_net_p.clip(lower=0.0)
+            # +ve => Gain/tacit Generator (typically environmental heat via HP)
+        network.links_t['p_loss'] = links_net_p.clip(upper=0.0)
+            # -ve -> Loss/tacit Load       
+        
         network.links['e0'] = network.links_t.p0.sum() * snapshot_interval
         network.links['e1'] = network.links_t.p1.sum() * snapshot_interval
-        links_net_e = -(network.links['e1'] + network.links['e0'])
-        network.links['gain_e'] = links_net_e.clip(lower=0.0)
+        network.links['e_gain'] = network.links_t.p_gain.sum() * snapshot_interval
+        network.links['e_loss'] = network.links_t.p_loss.sum() * snapshot_interval
+        
+        #links_net_e = -(network.links['e1'] + network.links['e0'])
+        #network.links['gain_e'] = links_net_e.clip(lower=0.0)
             # +ve => Gain/tacit Generator (typically environmental heat via HP)
-        network.links['loss_e'] = links_net_e.clip(upper=0.0)
+        #network.links['loss_e'] = links_net_e.clip(upper=0.0)
             # -ve -> Loss/tacit Load
 
         # network.generators_t.p_max_pu is not returned by lopf()
@@ -866,36 +876,36 @@ def gather_run_stats(run_config, network):
         min_load_p = network.loads_t.p.sum(axis='columns').min()
 
         #total_load_e = (network.loads_t.p.sum().sum() * snapshot_interval)
-        total_load_e = network.loads['e'].sum()
+        total_e_load = network.loads['e'].sum()
         #available_e = (network.generators_t.p_max_pu.multiply(network.generators.p_nom_opt).sum() 
         #    * snapshot_interval)
         #total_available_e = available_e.sum()
-        total_available_e = network.generators['avail_e'].sum()
+        total_e_available = network.generators['e_avail'].sum()
         #dispatched_e = network.generators_t.p.sum() * snapshot_interval
         #total_dispatched_e = dispatched_e.sum()
-        total_dispatched_e =  network.generators['dispatched_e'].sum()
-        total_generated_e = total_dispatched_e + network.links['gain_e'].sum()
-        total_losses_e = -network.links['loss_e'].sum()
-        total_consumed_e = total_load_e + total_losses_e
+        total_e_dispatched =  network.generators['e_dispatched'].sum()
+        total_generated_e = total_e_dispatched + network.links['e_gain'].sum()
+        total_losses_e = -network.links['e_loss'].sum()
+        total_consumed_e = total_e_load + total_losses_e
         assert((total_generated_e - total_consumed_e) < 1.0) # Notional tolerate on system balance, MWh
-        #undispatched_e = (available_e - dispatched_e)
+        #undispatched_e = (e_available - dispatched_e)
         #total_undispatched_e = undispatched_e.sum()
-        total_undispatched_e = total_available_e - total_dispatched_e 
-        #undispatched_frac = undispatched_e/available_e
+        total_e_undispatched = total_e_available - total_e_dispatched 
+        #undispatched_frac = undispatched_e/e_available
 
-        run_stats["System total load (TWh)"] = total_load_e/1.0e6
+        run_stats["System total load (TWh)"] = total_e_load/1.0e6
         run_stats["System mean load (GW)"] = mean_load_p/1.0e3
 
-        run_stats["System available (TWh)"] = total_available_e/1.0e6
-        run_stats["System dispatched (TWh)"] = total_dispatched_e/1.0e6
-        run_stats["System dispatched down (TWh)"] = total_undispatched_e/1.0e6
-        run_stats["System dispatched down (%)"] = (total_undispatched_e/total_available_e)*100.0
+        run_stats["System available primary (TWh)"] = total_e_available/1.0e6
+        run_stats["System dispatched (TWh)"] = total_e_dispatched/1.0e6
+        run_stats["System dispatched down (TWh)"] = total_e_undispatched/1.0e6
+        run_stats["System dispatched down (%)"] = (total_e_undispatched/total_e_available)*100.0
 
         run_stats["System generated (TWh)"] = total_generated_e/1.0e6 # Includes "link gains" - essentially HP
         run_stats["System losses (TWh)"] = total_losses_e/1.0e6
-        #run_stats["System efficiency gross (%)"] = (total_load_e/total_available_e)*100.0
+        #run_stats["System efficiency gross (%)"] = (total_load_e/total_e_available)*100.0
             # "gross" includes dispatch down
-        run_stats["System efficiency (%)"] = (total_load_e/total_generated_e)*100.0
+        run_stats["System efficiency (%)"] = (total_e_load/total_generated_e)*100.0
             # "net" of dispatch down
 
         for l in network.loads.index :
@@ -910,20 +920,20 @@ def gather_run_stats(run_config, network):
             # FIXME: add calculation of "min" LCOE for all gens (based on 100% capacity running)
             # Note that this doesn't depend on lopf() results - it is statically determined by
             # fixed and marginal costs of each gen.
-            avail_e = network.generators.at[g,'avail_e']
-            dispatched_e = network.generators.at[g,'dispatched_e']
-            undispatched_e = avail_e - dispatched_e
+            e_avail = network.generators.at[g,'e_avail']
+            e_dispatched = network.generators.at[g,'e_dispatched']
+            e_undispatched = e_avail - e_dispatched
             run_stats[g+" capacity nom (GW)"] = (
                 network.generators.p_nom_opt[g]/1.0e3)
-            run_stats[g+" available (TWh)"] = avail_e/1.0e6
-            run_stats[g+" dispatched (TWh)"] = dispatched_e/1.0e6
-            run_stats[g+" penetration (%)"] = (dispatched_e/total_dispatched_e)*100.0 
-            run_stats[g+" dispatched down (TWh)"] = undispatched_e/1.0e6
-            run_stats[g+" dispatched down (%)"] = (undispatched_e/avail_e)*100.0
+            run_stats[g+" available (TWh)"] = e_avail/1.0e6
+            run_stats[g+" dispatched (TWh)"] = e_dispatched/1.0e6
+            run_stats[g+" penetration (%)"] = (e_dispatched/total_e_dispatched)*100.0 
+            run_stats[g+" dispatched down (TWh)"] = e_undispatched/1.0e6
+            run_stats[g+" dispatched down (%)"] = (e_undispatched/e_avail)*100.0
             run_stats[g+" capacity factor max (%)"] = (
                 network.generators_t.p_max_pu[g].mean())*100.0
             run_stats[g+" capacity factor act (%)"] = (
-                dispatched_e/(network.generators.p_nom_opt[g]*total_hours))*100.0
+                e_dispatched/(network.generators.p_nom_opt[g]*total_hours))*100.0
 
         #links_e0 = network.links_t.p0.sum() * snapshot_interval
         #links_e1 = network.links_t.p1.sum() * snapshot_interval
@@ -933,17 +943,17 @@ def gather_run_stats(run_config, network):
             p_nom = network.links.p_nom_opt[l]
             e0=network.links.at[l,'e0']
             e1=network.links.at[l,'e1']
-            gain_e=network.links.at[l,'gain_e']
-            loss_e=-network.links.at[l,'loss_e']
+            e_gain=network.links.at[l,'e_gain']
+            e_loss=-network.links.at[l,'e_loss']
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
             #run_stats[l+" energy input (TWh)"] = links_e0[l]/1.0e6
             run_stats[l+" energy input (TWh)"] = e0/1.0e6
             run_stats[l+" energy output (TWh)"] = -e1/1.0e6
-            run_stats[l+" energy gain (TWh)"] = gain_e/1.0e6
-            run_stats[l+" energy loss (TWh)"] = loss_e/1.0e6
+            run_stats[l+" energy gain (TWh)"] = e_gain/1.0e6
+            run_stats[l+" energy loss (TWh)"] = e_loss/1.0e6
             run_stats[l+" capacity factor (%)"] = (
                 e0/(p_nom*total_hours))*100.0
-            if (gain_e > 0.0) : # Presume HP?
+            if (e_gain > 0.0) : # Presume HP?
                 #ashp_cop = network.links.at['ASHP','COP']
                 #ashp_spf = (
                 #    (ashp_cop * network.links_t.p1["ASHP"]).sum()
@@ -1032,12 +1042,12 @@ def gather_run_stats(run_config, network):
 
         run_stats["System total usable store I+B+H2 (TWh)"] = total_avail_store_gen/1.0e6
         total_avail_store_gen_h = total_avail_store_gen/mean_load_p
-        run_stats["System total usable store/load (%) "] = (total_avail_store_gen/total_load_e)*100.0
+        run_stats["System total usable store/load (%) "] = (total_avail_store_gen/total_e_load)*100.0
         run_stats["System total usable store time (h)"] = total_avail_store_gen_h
         run_stats["System total usable store time (d)"] = total_avail_store_gen_h/24.0
 
         run_stats["System notional cost (B€)"] = network.objective/1.0e9 # Scale (by Nyears) to p.a.?
-        run_stats["System notional LCOE (€/MWh)"] = network.objective/total_load_e
+        run_stats["System notional LCOE (€/MWh)"] = network.objective/total_e_load
 
         buses = ["local-elec-grid", "H2"]
         for b in buses:
