@@ -841,8 +841,17 @@ def gather_run_stats(run_config, network):
             network.generators_t.p_max_pu.multiply(network.generators.p_nom_opt).sum() 
             * snapshot_interval)
         network.generators['e_dispatched'] = network.generators_t.p.sum() * snapshot_interval
-       
 
+        # network.generators_t.p_max_pu is not returned by lopf()
+        # for gens with static p_max_pu (since it doesn't change
+        # in time) but we want to do various generic calculations
+        # for *all* generators using this so add it in for such
+        # generators, if any...
+        for g in network.generators.index :
+            if (not(g in network.generators_t.p_max_pu.columns)) :
+                network.generators_t.p_max_pu[g] = network.generators.at[g,'p_max_pu']
+
+        # We want timeseries of link power gain/loss for potential use in power balance plots
         links_net_p = -(network.links_t.p0 + network.links_t.p1)
         network.links_t['p_gain'] = links_net_p.clip(lower=0.0)
             # +ve => Gain/tacit Generator (typically environmental heat via HP)
@@ -854,44 +863,20 @@ def gather_run_stats(run_config, network):
         network.links['e_gain'] = network.links_t.p_gain.sum() * snapshot_interval
         network.links['e_loss'] = network.links_t.p_loss.sum() * snapshot_interval
         
-        #links_net_e = -(network.links['e1'] + network.links['e0'])
-        #network.links['gain_e'] = links_net_e.clip(lower=0.0)
-            # +ve => Gain/tacit Generator (typically environmental heat via HP)
-        #network.links['loss_e'] = links_net_e.clip(upper=0.0)
-            # -ve -> Loss/tacit Load
-
-        # network.generators_t.p_max_pu is not returned by lopf()
-        # for gens with static p_max_pu (since it doesn't change
-        # in time) but we want to do various generic calculations
-        # for *all* generators using this so add it in for such
-        # generators, if any...
-        for g in network.generators.index :
-            if (not(g in network.generators_t.p_max_pu.columns)) :
-                network.generators_t.p_max_pu[g] = network.generators.at[g,'p_max_pu']
-
         # Summary stats on aggregate "final" energy use (across
         # all pypsa "load" components)
         max_load_p = network.loads_t.p.sum(axis='columns').max()
         mean_load_p = network.loads_t.p.sum(axis='columns').mean()
         min_load_p = network.loads_t.p.sum(axis='columns').min()
 
-        #total_load_e = (network.loads_t.p.sum().sum() * snapshot_interval)
         total_e_load = network.loads['e'].sum()
-        #available_e = (network.generators_t.p_max_pu.multiply(network.generators.p_nom_opt).sum() 
-        #    * snapshot_interval)
-        #total_available_e = available_e.sum()
         total_e_available = network.generators['e_avail'].sum()
-        #dispatched_e = network.generators_t.p.sum() * snapshot_interval
-        #total_dispatched_e = dispatched_e.sum()
         total_e_dispatched =  network.generators['e_dispatched'].sum()
         total_generated_e = total_e_dispatched + network.links['e_gain'].sum()
         total_losses_e = -network.links['e_loss'].sum()
         total_consumed_e = total_e_load + total_losses_e
-        assert((total_generated_e - total_consumed_e) < 1.0) # Notional tolerate on system balance, MWh
-        #undispatched_e = (e_available - dispatched_e)
-        #total_undispatched_e = undispatched_e.sum()
+        assert((total_generated_e - total_consumed_e) < 1.0) # Notional tolerance on system balance, MWh
         total_e_undispatched = total_e_available - total_e_dispatched 
-        #undispatched_frac = undispatched_e/e_available
 
         run_stats["System total load (TWh)"] = total_e_load/1.0e6
         run_stats["System mean load (GW)"] = mean_load_p/1.0e3
@@ -901,15 +886,11 @@ def gather_run_stats(run_config, network):
         run_stats["System dispatched down (TWh)"] = total_e_undispatched/1.0e6
         run_stats["System dispatched down (%)"] = (total_e_undispatched/total_e_available)*100.0
 
-        run_stats["System generated (TWh)"] = total_generated_e/1.0e6 # Includes "link gains" - essentially HP
+        run_stats["System generated (TWh)"] = total_generated_e/1.0e6 # Includes "link gains" (essentially HP?)
         run_stats["System losses (TWh)"] = total_losses_e/1.0e6
-        #run_stats["System efficiency gross (%)"] = (total_load_e/total_e_available)*100.0
-            # "gross" includes dispatch down
         run_stats["System efficiency (%)"] = (total_e_load/total_generated_e)*100.0
-            # "net" of dispatch down
 
         for l in network.loads.index :
-            #total_e = network.loads_t.p[l].sum() * snapshot_interval
             total_e = network.loads.at[l,'e']
             run_stats[l+" total_e (TWh)"] = (total_e/1.0e6)
             run_stats[l+" max_p (GW)"] = network.loads_t.p[l].max()/1.0e3
@@ -917,7 +898,7 @@ def gather_run_stats(run_config, network):
             run_stats[l+" min_p (GW)"] = network.loads_t.p[l].min()/1.0e3
 
         for g in network.generators.index :
-            # FIXME: add calculation of "min" LCOE for all gens (based on 100% capacity running)
+            # FIXME? Add calculation of "min" LCOE for all gens (based on 100% capacity running)
             # Note that this doesn't depend on lopf() results - it is statically determined by
             # fixed and marginal costs of each gen.
             e_avail = network.generators.at[g,'e_avail']
@@ -934,9 +915,6 @@ def gather_run_stats(run_config, network):
                 network.generators_t.p_max_pu[g].mean())*100.0
             run_stats[g+" capacity factor act (%)"] = (
                 e_dispatched/(network.generators.p_nom_opt[g]*total_hours))*100.0
-
-        #links_e0 = network.links_t.p0.sum() * snapshot_interval
-        #links_e1 = network.links_t.p1.sum() * snapshot_interval
 
         links_final_conversion = ["BEV", "FCEV", "ASHP", "H2_boiler"]
         for l in links_final_conversion:
