@@ -1,1 +1,5 @@
 *~
+*.png
+*.pdf
+# But don't ignore this file
+!.gitignore
