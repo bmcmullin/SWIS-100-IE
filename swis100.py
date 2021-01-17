@@ -340,6 +340,19 @@ assumptions_raw = pd.read_excel('assumptions/SWIS.ods',
                                 header=0,
                                 sheet_name='SWIS').sort_index()
 
+# Configure PyPSA so that links can have multiple outputs by
+# overriding the component_attrs. This can be done for
+# as many buses as you need with format busi for i = 2,3,4,5,....
+# See https://pypsa.org/doc/components.html#link-with-multiple-outputs-or-inputs
+
+override_component_attrs = pypsa.descriptors.Dict({k : v.copy() for k,v in pypsa.components.component_attrs.items()})
+override_component_attrs["Link"].loc["bus2"] = ["string",np.nan,np.nan,"2nd bus","Input (optional)"]
+#override_component_attrs["Link"].loc["bus3"] = ["string",np.nan,np.nan,"3rd bus","Input (optional)"]
+override_component_attrs["Link"].loc["efficiency2"] = ["static or series","per unit",1.,"2nd bus efficiency","Input (optional)"]
+#override_component_attrs["Link"].loc["efficiency3"] = ["static or series","per unit",1.,"3rd bus efficiency","Input (optional)"]
+override_component_attrs["Link"].loc["p2"] = ["series","MW",0.,"2nd bus output","Output"]
+#override_component_attrs["Link"].loc["p3"] = ["series","MW",0.,"3rd bus output","Output"]
+
 # Required functions
 
 def annuity(lifetime, rate):
@@ -542,7 +555,7 @@ def solve_network(run_config):
                 p_nom_min = run_config['IC_min_p (GW)']*1e3, # GW -> MW
                 p_nom_max = run_config['IC_max_p (GW)']*1e3, # GW -> MW
                 capital_cost=assumptions.at['interconnector','fixed']*0.8
-                 # Capital cost shared somewhat with remote-elec-grid operator(s)
+                 # Capital cost "shared" somewhat (20%?) by remote-elec-grid operator(s)
                 )
  
     network.add("Link","ic-import",
@@ -762,8 +775,40 @@ def solve_network(run_config):
                 p_nom_min = run_config['H2_boiler_min_p (GW)']*1e3, # GW -> MW
                 p_nom_max = run_config['H2_boiler_max_p (GW)']*1e3, # GW -> MW
                 efficiency = assumptions.at["H2 boiler","efficiency"],
-                capital_cost=assumptions.at["H2 boiler","fixed"])
+                capital_cost = assumptions.at["H2 boiler","fixed"])
 
+    # DAC subsystem
+    network.add("Bus", "CO2_atm_bus",
+                carrier="CO2")
+    network.add("Store", "CO2_atm_store",
+                bus="CO2_atm_bus",
+                e_nom_extendable=True,
+                e_nom_max = +inf,
+                e_nom_min = -inf,
+                capital_cost = 0.0, # €/tCO2
+                marginal_cost = 0.0, # €/(tCO2/h)
+                e_initial = 0.0) # Just track *changes* in atm CO2 stock
+
+    network.add("Bus", "CO2_conc_bus", # Concentrated/"pure" CO2
+                carrier="CO2")
+
+    # No config var limits for DAC capacity: we assume this can be freely driven to meet
+    # custom constraint on total CO2 removal (if any).
+    network.add("Link", "DAC",
+                bus0 = "local-elec-grid", # Primary input: electricity, MW
+                bus1 = "CO2_conc_bus", # Primary output, conc. CO2, tCO2/h
+                bus2 = "CO2_atm_store",
+                    # Secondary input (neg efficiency!):
+                    # dilute CO2 from atm, tCO2/h
+                efficiency = assumptions.at['DAC','efficiency'], # tCO2/MWh
+                efficiency2 = -assumptions.at['DAC','efficiency'], # Conservation of CO2 mass
+                p_nom_extendable = True,
+                p_nom_min = 0.0,
+                    # Default, but stated explicitly to emphasise that DAC plant can't be
+                    # operated in reverse (somehow generate power by releasing CO2 to atmosphere)
+                capital_cost=assumptions.at['DAC','fixed'] # /MW input capacity (p_nom)
+                )
+                
     # Custom constraints:
     
     def extra_functionality(network,snapshots):
@@ -785,6 +830,13 @@ def solve_network(run_config):
                        link_p_nom["battery discharge"]))
         define_constraints(network, lhs, "=", 0.0, 'Link', 'battery_charger_ratio')
 
+        # Atmospheric CO2 constraint
+        delta_CO2_atm_max = run_config['delta_CO2_atm_max (MtCO2)']*1e6 # MtCO2 -> t
+        atm_CO2_store_e = get_var(network, "Store", "e")["CO2_atm_store"].iloc[-1]
+            # Scalar var: *final* value of e for CO2_atm_store
+        lhs = linexpr(1.0, atm_CO2_store_e)
+        define_constraints(network, lhs, "<", delta_CO2_atm_max, 'Store', 'delta CO2 atm (max)')
+        
         # ## DEFUNCT: legacy representation of harvest of
         # environmental heat energy via an explicit Generator.
         # ASHP Link and ASHP_RE Generator are coupled together so
