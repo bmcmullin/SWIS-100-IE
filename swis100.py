@@ -340,19 +340,6 @@ assumptions_raw = pd.read_excel('assumptions/SWIS.ods',
                                 header=0,
                                 sheet_name='SWIS').sort_index()
 
-# Configure PyPSA so that links can have multiple outputs by
-# overriding the component_attrs. This can be done for
-# as many buses as you need with format busi for i = 2,3,4,5,....
-# See https://pypsa.org/doc/components.html#link-with-multiple-outputs-or-inputs
-
-override_component_attrs = pypsa.descriptors.Dict({k : v.copy() for k,v in pypsa.components.component_attrs.items()})
-override_component_attrs["Link"].loc["bus2"] = ["string",np.nan,np.nan,"2nd bus","Input (optional)"]
-#override_component_attrs["Link"].loc["bus3"] = ["string",np.nan,np.nan,"3rd bus","Input (optional)"]
-override_component_attrs["Link"].loc["efficiency2"] = ["static or series","per unit",1.,"2nd bus efficiency","Input (optional)"]
-#override_component_attrs["Link"].loc["efficiency3"] = ["static or series","per unit",1.,"3rd bus efficiency","Input (optional)"]
-override_component_attrs["Link"].loc["p2"] = ["series","MW",0.,"2nd bus output","Output"]
-#override_component_attrs["Link"].loc["p3"] = ["series","MW",0.,"3rd bus output","Output"]
-
 # Required functions
 
 def annuity(lifetime, rate):
@@ -423,7 +410,19 @@ def solve_network(run_config):
     #solar_pu = solar_pu_raw
     #wind_pu = wind_pu_raw
 
-    network = pypsa.Network()
+    # Configure Links to have multiple outputs by overriding the
+    # component_attrs. This can be done for as many buses as you
+    # need with format busi for i = 2,3,4,5,....  See
+    # https://pypsa.org/doc/components.html#link-with-multiple-outputs-or-inputs
+    override_component_attrs = pypsa.descriptors.Dict({k : v.copy() for k,v in pypsa.components.component_attrs.items()})
+    override_component_attrs["Link"].loc["bus2"] = ["string",np.nan,np.nan,"2nd bus","Input (optional)"]
+    #override_component_attrs["Link"].loc["bus3"] = ["string",np.nan,np.nan,"3rd bus","Input (optional)"]
+    override_component_attrs["Link"].loc["efficiency2"] = ["static or series","per unit",1.,"2nd bus efficiency","Input (optional)"]
+    #override_component_attrs["Link"].loc["efficiency3"] = ["static or series","per unit",1.,"3rd bus efficiency","Input (optional)"]
+    override_component_attrs["Link"].loc["p2"] = ["series","MW",0.,"2nd bus output","Output"]
+    #override_component_attrs["Link"].loc["p3"] = ["series","MW",0.,"3rd bus output","Output"]
+    
+    network = pypsa.Network(override_component_attrs=override_component_attrs)
 
     snapshots_df = pd.date_range("{}-01-01".format(weather_year_start),
                               "{}-12-31 23:00".format(weather_year_end),
@@ -783,14 +782,22 @@ def solve_network(run_config):
     network.add("Store", "CO2_atm_store",
                 bus="CO2_atm_bus",
                 e_nom_extendable=True,
-                e_nom_max = +inf,
-                e_nom_min = -inf,
+                e_nom_max = +np.inf,
+                e_nom_min = -np.inf,
                 capital_cost = 0.0, # €/tCO2
                 marginal_cost = 0.0, # €/(tCO2/h)
                 e_initial = 0.0) # Just track *changes* in atm CO2 stock
 
     network.add("Bus", "CO2_conc_bus", # Concentrated/"pure" CO2
                 carrier="CO2")
+    network.add("Store", "CO2_conc_store",
+                bus="CO2_conc_bus",
+                e_nom_extendable=True,
+                e_nom_max = +np.inf,
+                e_nom_min = 0.0,
+                capital_cost = assumptions.at['CO2_conc_store','fixed'], # €/tCO2
+                marginal_cost = 0.0, # €/(tCO2/h)
+                e_initial = 0.0) # This may impose startup artefact in CO2 *utilisation*
 
     # No config var limits for DAC capacity: we assume this can be freely driven to meet
     # custom constraint on total CO2 removal (if any).
@@ -805,7 +812,7 @@ def solve_network(run_config):
                 p_nom_extendable = True,
                 p_nom_min = 0.0,
                     # Default, but stated explicitly to emphasise that DAC plant can't be
-                    # operated in reverse (somehow generate power by releasing CO2 to atmosphere)
+                    # operated in reverse (somehow generate power by releasing CO2 to atmosphere!?)
                 capital_cost=assumptions.at['DAC','fixed'] # /MW input capacity (p_nom)
                 )
                 
@@ -834,8 +841,8 @@ def solve_network(run_config):
         delta_CO2_atm_max = run_config['delta_CO2_atm_max (MtCO2)']*1e6 # MtCO2 -> t
         atm_CO2_store_e = get_var(network, "Store", "e")["CO2_atm_store"].iloc[-1]
             # Scalar var: *final* value of e for CO2_atm_store
-        lhs = linexpr(1.0, atm_CO2_store_e)
-        define_constraints(network, lhs, "<", delta_CO2_atm_max, 'Store', 'delta CO2 atm (max)')
+        lhs = linexpr((1.0, atm_CO2_store_e))
+        define_constraints(network, lhs, "<=", delta_CO2_atm_max, 'Store', 'delta CO2 atm (max)')
         
         # ## DEFUNCT: legacy representation of harvest of
         # environmental heat energy via an explicit Generator.
@@ -875,6 +882,9 @@ def solve_network(run_config):
 
 def gather_run_stats(run_config, network):
 
+    # FIXME: exclude CO2 from all accounting for "real" energy; include specialised
+    # accounting for CO2.
+    
     # FIXME: Add a sanity check that there are no snapshots where *both* electrolysis and 
     # H2 to power (whether CCGT or OCGT) are simultaneously dispatched!? (Unless there is
     # some conceivable circumstance in which it makes sense to take power over the interconnector
