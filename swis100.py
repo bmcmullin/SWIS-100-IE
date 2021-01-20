@@ -416,11 +416,8 @@ def solve_network(run_config):
     # https://pypsa.org/doc/components.html#link-with-multiple-outputs-or-inputs
     override_component_attrs = pypsa.descriptors.Dict({k : v.copy() for k,v in pypsa.components.component_attrs.items()})
     override_component_attrs["Link"].loc["bus2"] = ["string",np.nan,np.nan,"2nd bus","Input (optional)"]
-    #override_component_attrs["Link"].loc["bus3"] = ["string",np.nan,np.nan,"3rd bus","Input (optional)"]
     override_component_attrs["Link"].loc["efficiency2"] = ["static or series","per unit",1.,"2nd bus efficiency","Input (optional)"]
-    #override_component_attrs["Link"].loc["efficiency3"] = ["static or series","per unit",1.,"3rd bus efficiency","Input (optional)"]
     override_component_attrs["Link"].loc["p2"] = ["series","MW",0.,"2nd bus output","Output"]
-    #override_component_attrs["Link"].loc["p3"] = ["series","MW",0.,"3rd bus output","Output"]
     
     network = pypsa.Network(override_component_attrs=override_component_attrs)
 
@@ -783,7 +780,7 @@ def solve_network(run_config):
                 bus="CO2_atm_bus",
                 e_nom_extendable=True,
                 e_nom_max = +np.inf,
-                e_min_pu = -1.0,
+                e_min_pu = -1.0, # We want to allow net CDR against inital "zero" reference
                 capital_cost = 0.0, # €/tCO2
                 marginal_cost = 0.0, # €/(tCO2/h)
                 e_initial = 0.0) # Just track *changes* in atm CO2 stock
@@ -882,9 +879,6 @@ def solve_network(run_config):
 
 def gather_run_stats(run_config, network):
 
-    # FIXME: exclude CO2 from all accounting for "real" energy; include specialised
-    # accounting for CO2.
-    
     # FIXME: Add a sanity check that there are no snapshots where *both* electrolysis and 
     # H2 to power (whether CCGT or OCGT) are simultaneously dispatched!? (Unless there is
     # some conceivable circumstance in which it makes sense to take power over the interconnector
@@ -900,13 +894,10 @@ def gather_run_stats(run_config, network):
         snapshot_interval = run_config['snapshot_interval']
         total_hours = network.snapshot_weightings.sum()
 
-        # WARNING: System-wide aggregations here currently assume that
-        # all pypsa flows are actually real energy (so all pypsa loads
-        # are energy loads, all generators are energy generators
-        # etc). This WILL break if/when we introduce
-        # "pseudo-energy carriers", specifically including CO2...
-        
-        # Stash some preliminary data as extra columns in network components
+        # Stash some preliminary data as extra columns in network
+        # components. NB: possibly some of this might be better
+        # done via override_component_attrs at time of network
+        # creation...
 
         network.loads['e'] = (network.loads_t.p.sum() * snapshot_interval)
 
@@ -929,20 +920,33 @@ def gather_run_stats(run_config, network):
         network.links_t['p_gain'] = links_net_p.clip(lower=0.0)
             # +ve => Gain/tacit Generator (typically environmental heat via HP)
         network.links_t['p_loss'] = links_net_p.clip(upper=0.0)
-            # -ve -> Loss/tacit Load       
-        
+            # -ve -> Loss/tacit Load
+
+        # Hack to re-classify power consumed in DAC link as
+        # (useful!?) "load" rather than (useless!) "loss".
+        network.links_t['p_load'] = pd.DataFrame(0.0,
+                                    columns=network.links_t.p0.columns,
+                                    index=network.links_t.p0.index)
+        network.links_t.p_load['DAC'] = network.links_t.p0['DAC']
+        network.links_t.p_loss['DAC'] = 0.0
+       
         network.links['e0'] = network.links_t.p0.sum() * snapshot_interval
         network.links['e1'] = network.links_t.p1.sum() * snapshot_interval
         network.links['e_gain'] = network.links_t.p_gain.sum() * snapshot_interval
         network.links['e_loss'] = network.links_t.p_loss.sum() * snapshot_interval
+        network.links['e_load'] = network.links_t.p_load.sum() * snapshot_interval
         
-        # Summary stats on aggregate "final" energy use (across
-        # all pypsa "load" components)
-        max_load_p = network.loads_t.p.sum(axis='columns').max()
-        mean_load_p = network.loads_t.p.sum(axis='columns').mean()
-        min_load_p = network.loads_t.p.sum(axis='columns').min()
+        # Summary stats on aggregate "final" energy use, across
+        # all pypsa "load" components, plus any "p_load" from "link" components
+        #max_load_p = network.loads_t.p.sum(axis='columns').max()
+        #mean_load_p = network.loads_t.p.sum(axis='columns').mean()
+        #min_load_p = network.loads_t.p.sum(axis='columns').min()
+        total_load_p = network.loads_t.p.sum(axis='columns') + network.links_t.p_load.sum(axis='columns')
+        max_load_p = total_load_p.max()
+        mean_load_p = total_load_p.mean()
+        min_load_p = total_load_p.min()
 
-        total_e_load = network.loads['e'].sum()
+        total_e_load = network.loads['e'].sum() + network.links['e_load'].sum()
         total_e_available = network.generators['e_avail'].sum()
         total_e_dispatched =  network.generators['e_dispatched'].sum()
         total_generated_e = total_e_dispatched + network.links['e_gain'].sum()
@@ -970,6 +974,17 @@ def gather_run_stats(run_config, network):
             run_stats[l+" mean_p (GW)"] = (total_e/(total_hours*1.0e3))
             run_stats[l+" min_p (GW)"] = network.loads_t.p[l].min()/1.0e3
 
+        # Special stats for DAC "load"; some duplication with generic link stats
+        dac_p_nom = network.links.p_nom_opt['DAC']
+        dac_total_e = network.links.loc['DAC','e_load']
+        run_stats["DAC i/p capacity nom (GW)"] = (dac_p_nom/1.0e3)
+        run_stats["DAC total_e (TWh)"] = dac_total_e/1.0e6
+        run_stats["DAC capacity factor (%)"] = (
+                dac_total_e/(dac_p_nom*total_hours))*100.0
+        run_stats["DAC max_p (GW)"] = network.links_t.p_load['DAC'].max()/1.0e3
+        run_stats["DAC mean_p (GW)"] = (dac_total_e/(total_hours*1.0e3))
+        run_stats["DAC min_p (GW)"] = network.links_t.p_load['DAC'].min()/1.0e3
+
         for g in network.generators.index :
             # FIXME? Add calculation of "min" LCOE for all gens (based on 100% capacity running)
             # Note that this doesn't depend on lopf() results - it is statically determined by
@@ -996,6 +1011,7 @@ def gather_run_stats(run_config, network):
             e1=network.links.at[l,'e1']
             e_gain=network.links.at[l,'e_gain']
             e_loss=-network.links.at[l,'e_loss']
+            #e_load=-network.links.at[l,'e_load']
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
             #run_stats[l+" energy input (TWh)"] = links_e0[l]/1.0e6
             run_stats[l+" energy input (TWh)"] = e0/1.0e6
@@ -1016,7 +1032,10 @@ def gather_run_stats(run_config, network):
             else :
                 run_stats[l+" o/p capacity nom (GW)"] = (
                     (p_nom*network.links.efficiency[l])/1.0e3)
-       
+
+        run_stats["CO2_atm_store e_nom (MtCO2)"] = network.stores.e_nom_opt["CO2_atm_store"]/1.0e6
+        run_stats["CO2_conc_store e_nom (MtCO2)"] = network.stores.e_nom_opt["CO2_conc_store"]/1.0e6
+        
         ic_p = network.links.p_nom_opt["ic-export"]
         run_stats["IC power (GW)"] = ic_p/1.0e3
             # NB: interconnector export and import p_nom are constrained to be equal
@@ -1157,6 +1176,10 @@ def gather_run_stats(run_config, network):
         run_stats["IC import notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["ic-import"]).sum())
                                   / network.links_t.p1["ic-import"].sum())
+
+        run_stats["Elec. for DAC notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["DAC"]).sum())
+                                  / network.links_t.p0["DAC"].sum())
 
         run_stats["Elec. for H2 electrolysis notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["H2 electrolysis"]).sum())
