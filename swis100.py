@@ -783,7 +783,7 @@ def solve_network(run_config):
                 bus="CO2_atm_bus",
                 e_nom_extendable=True,
                 e_nom_max = +np.inf,
-                e_nom_min = -np.inf,
+                e_min_pu = -1.0,
                 capital_cost = 0.0, # €/tCO2
                 marginal_cost = 0.0, # €/(tCO2/h)
                 e_initial = 0.0) # Just track *changes* in atm CO2 stock
@@ -797,14 +797,14 @@ def solve_network(run_config):
                 e_nom_min = 0.0,
                 capital_cost = assumptions.at['CO2_conc_store','fixed'], # €/tCO2
                 marginal_cost = 0.0, # €/(tCO2/h)
-                e_initial = 0.0) # This may impose startup artefact in CO2 *utilisation*
+                e_initial = 0.0) # This may impose a startup artefact in CO2 *utilisation*
 
     # No config var limits for DAC capacity: we assume this can be freely driven to meet
     # custom constraint on total CO2 removal (if any).
     network.add("Link", "DAC",
                 bus0 = "local-elec-grid", # Primary input: electricity, MW
                 bus1 = "CO2_conc_bus", # Primary output, conc. CO2, tCO2/h
-                bus2 = "CO2_atm_store",
+                bus2 = "CO2_atm_bus",
                     # Secondary input (neg efficiency!):
                     # dilute CO2 from atm, tCO2/h
                 efficiency = assumptions.at['DAC','efficiency'], # tCO2/MWh
