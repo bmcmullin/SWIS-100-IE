@@ -1183,7 +1183,11 @@ def gather_run_stats(run_config, network):
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["DAC"]).sum())
                                   / network.links_t.p0["DAC"].sum())
 
-        run_stats["CO2 from DAC notional shadow price (€/tCO2)"] = (
+        run_stats["Atm CO2 to DAC notional shadow price (€/tCO2)"] = (
+            ((network.buses_t.marginal_price["CO2_atm_bus"]*network.links_t.p2["DAC"]).sum())
+                                  / network.links_t.p2["DAC"].sum())
+        
+        run_stats["Conc CO2 from DAC notional shadow price (€/tCO2)"] = (
             ((network.buses_t.marginal_price["CO2_conc_bus"]*network.links_t.p1["DAC"]).sum())
                                   / network.links_t.p1["DAC"].sum())
 
