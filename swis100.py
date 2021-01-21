@@ -35,6 +35,7 @@ config_converters = {
     'BEV_min_p (GW)' : float,
     'Battery_max_e (MWh)' : float,
     'Battery_max_p (MW)' : float,
+    'delta_CO2_atm_max (MtCO2)' : float,
     'FCEV_max_p (GW)' : float,
     'FCEV_min_p (GW)' : float,
     'H2_CCGT_max_p (GW)' : float,
@@ -354,7 +355,8 @@ def prepare_assumptions(Nyears=1,usd_to_eur=1/1.2,assumptions_year=2020):
 
     assumptions = assumptions_raw.copy(deep=True)
 
-    #correct units to MW and EUR
+    #correct units to MW, EUR, tCO2
+    assumptions.loc[assumptions.unit.str.contains("/kgCO2"),"value"]*=1e3
     assumptions.loc[assumptions.unit.str.contains("/kW"),"value"]*=1e3
     assumptions.loc[assumptions.unit.str.contains("USD"),"value"]*=usd_to_eur
 
@@ -1180,6 +1182,10 @@ def gather_run_stats(run_config, network):
         run_stats["Elec. for DAC notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["DAC"]).sum())
                                   / network.links_t.p0["DAC"].sum())
+
+        run_stats["CO2 from DAC notional shadow price (€/tCO2)"] = (
+            ((network.buses_t.marginal_price["CO2_conc_bus"]*network.links_t.p1["DAC"]).sum())
+                                  / network.links_t.p1["DAC"].sum())
 
         run_stats["Elec. for H2 electrolysis notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["H2 electrolysis"]).sum())
