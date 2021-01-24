@@ -602,8 +602,8 @@ def solve_network(run_config):
     h2_electrolysis_tech = 'H2 electrolysis ' + run_config['H2_electrolysis_tech']
 
     network.add("Link", "H2 electrolysis",
-                bus1="H2",
-                bus0="local-elec-grid",
+                bus0="local-elec-grid", # input
+                bus1="H2", # output
                 p_nom_extendable=True,
                 p_nom_max = run_config['H2_electrolysis_max_p (GW)']*1e3, # GW -> MW
                 efficiency=assumptions.at["H2 electrolysis","efficiency"],
@@ -637,7 +637,90 @@ def solve_network(run_config):
                 e_cyclic=True,
                 capital_cost=assumptions.at[h2_storage_tech,"fixed"])
 
-    # Transport subsystem (surface only as yet: excludes aviation)
+    # DAC subsystem
+    network.add("Bus", "CO2_atm_bus",
+                carrier="CO2")
+    network.add("Store", "CO2_atm_store",
+                bus="CO2_atm_bus",
+                e_nom_extendable=True,
+                e_nom_max = +np.inf,
+                e_min_pu = -1.0, # We want to allow net CDR against inital "zero" reference
+                capital_cost = 0.0, # €/tCO2
+                marginal_cost = 0.0, # €/(tCO2/h)
+                e_initial = 0.0) # Just track *changes* in atm CO2 stock
+
+    network.add("Bus", "CO2_conc_bus", # Concentrated/"pure" CO2
+                carrier="CO2")
+    network.add("Store", "CO2_conc_store",
+                bus="CO2_conc_bus",
+                e_nom_extendable=True,
+                e_nom_max = +np.inf,
+                e_nom_min = 0.0,
+                capital_cost = assumptions.at['CO2_conc_store','fixed'], # €/tCO2
+                marginal_cost = 0.0, # €/(tCO2/h)
+                # Leave e_initial unset so that it is
+                # as an optimisation variable to allow for
+                # possible "start up" buffer for FT
+                )
+
+    # No config var limits for DAC capacity: we assume this can be freely driven to meet
+    # custom constraint on total CO2 removal (if any).
+    network.add("Link", "DAC",
+                bus0 = "local-elec-grid", # Primary input: electricity, MW
+                bus1 = "CO2_conc_bus", # Primary output, conc. CO2, tCO2/h
+                bus2 = "CO2_atm_bus",
+                    # Secondary input (neg efficiency!):
+                    # dilute CO2 from atm, tCO2/h
+                efficiency = assumptions.at['DAC','efficiency'], # tCO2/MWh
+                efficiency2 = -assumptions.at['DAC','efficiency'], # Conservation of CO2 mass
+                p_nom_extendable = True,
+                p_nom_min = 0.0,
+                    # Default, but stated explicitly to emphasise that DAC plant can't be
+                    # operated in reverse (somehow generate power by releasing CO2 to atmosphere!?)
+                capital_cost=assumptions.at['DAC','fixed'] # /MW input capacity (p_nom)
+                )
+
+    # Fischer-Tropsch (FT) synthetic (liquid hydrocarbon fuel) subsystem
+    network.add("Bus","syn_fuel_bus"
+                carrier="syn_fuel")
+
+    # In practice, we would deploy some amount of syn_fuel buffer
+    # store; but in the absence of high-resolution time
+    # variability for air transport load, we can't optimize a
+    # suitable size for such a buffer here. So just omit
+    # altogether for simplicity?
+    
+    # network.add("Store", "syn_fuel_store",
+    #             bus="syn_fuel_bus",
+    #             e_nom_extendable=True,
+    #             e_nom_max = +np.inf,
+    #             capital_cost = 0.0, # €/MW
+    #             marginal_cost = 0.0, # €/MWh)
+    #             e_initial = 0.0)
+
+    h2_specific_energy = 39.4 # MWh/tH2
+        # ~39,400 Wh/kg https://en.wikipedia.org/wiki/Energy_density
+        # /1e3 for MWh/tH2
+    co2_atomic_mass = 44.0 
+    network.add("Link", "FT",
+                bus0 = "H2", # Primary input: H2, MW
+                bus1 = "syn_fuel_bus", # Primary output, syn_fuel, MW
+                bus2 = "CO2_conc_bus",
+                    # Secondary input (neg "efficiency"!):
+                    # conc. CO2, tCO2/h
+                efficiency = assumptions.at['FT','efficiency'], # dimensionless (MWh syn_fuel/MWh H2)
+                efficiency2 = h2_specific_energy/co2_atomic_mass,
+                    # (MWh syn_fuel / tCO2)/h
+                    # *Very* roughly, need ~equal molar amounts of H2 and CO2 to
+                    # synthesize "long-chain" hydrocarbons?
+                p_nom_extendable = True,
+                p_nom_min = 0.0,
+                    # Default, but stated explicitly to emphasise that FT plant won't be
+                    # operated in reverse (generate H2 and CO2 from syn_fuel)
+                capital_cost=assumptions.at['FT','fixed'] # /MW input capacity (p_nom), as H2 carrier
+                )
+    
+    # *Surface* transport subsystem
     network.add("Bus","surface_transport_final")
 
     # Configure required surface_transport_load
@@ -713,6 +796,68 @@ def solve_network(run_config):
                 efficiency=assumptions.at["FCEV","efficiency"],
                 capital_cost=assumptions.at["FCEV","fixed"])
 
+    # *Air* transport subsystem
+    network.add("Bus","air_transport_final")
+
+    # Configure required air_transport_load
+
+    aviation_cols = ['Domestic Aviation', 
+                    'International Aviation']
+
+    # Configure required air_transport_load (constant or timeseries)
+    if (run_config['constant_air_transport_load_flag']) :
+        air_transport_load = run_config['constant_air_transport_load (GW)']*1.0e3 # GW -> MW
+    else :
+        # Available year(s) for seai transport data are 1990-2018, but allowing for
+        # interpolation, usable range is 1991-2017 inclusive
+        air_transport_load_year_start = int(run_config['transport_load_year_start'])
+        assert(air_transport_load_year_start >= 1991)
+        air_transport_load_year_end = air_transport_load_year_start + (Nyears - 1)
+        assert(air_transport_load_year_end <= 2017)
+
+        # We include an extra year before and after the years of interest to smooth the interpolation
+        air_transport_load = (
+            transport_load_data_raw.loc[
+                    str(air_transport_load_year_start - 1) : 
+                    str(air_transport_load_year_end +1),
+                    aviation_cols].sum(axis=1)
+                * assumptions.at['aircraft','efficiency'])
+            # For consistency with surface transport; but note
+            # there is no currently credible prospect of dramatic
+            # improvements in "tank-to-thrust" aircraft
+            # efficiency (e.g., via electrification).
+            
+        air_transport_load = (
+            air_transport_load.resample(str(snapshot_interval)+"H").interpolate())
+        air_transport_load = (air_transport_load[
+                ~((air_transport_load.index.month == 2) & 
+                  (air_transport_load.index.day == 29))])
+                # Filter out "leap days" (29th Feb in any year)
+        air_transport_load = (air_transport_load[
+            "{}-01-01 00:00".format(air_transport_load_year_start) :
+            "{}-12-31 23:59".format(air_transport_load_year_end)])
+                # Filter just the full years actually in scope
+        assert(air_transport_load.count() == snapshots.size)
+        air_transport_load = air_transport_load.values
+
+    network.add("Load","air-transport-demand",
+                bus="air_transport_final",
+                p_set= air_transport_final)
+
+    mwhr_per_mj = 277e-6
+    syn_fuel_mj_per_kg = 44.0 # https://en.wikipedia.org/wiki/Aviation_fuel#Energy_content
+    syn_fuel_mwh_per_t = (syn_fuel_mj_per_kg / 1.0e3) * mwhr_per_mj
+    syn_fuel_tCO2_per_t = 3.16 # https://www.eesi.org/papers/view/fact-sheet-the-growth-in-greenhouse-gas-emissions-from-commercial-aviation
+        # Neglect non-CO2 warming effects!?
+    network.add("Link", "aircraft",
+                bus0="syn_fuel_bus",
+                bus1="air_transport_final",
+                bus2="co2_atm_bus",
+                p_nom_extendable=True, # No min/max config: determined from load
+                efficiency=assumptions.at["aircraft","efficiency"],
+                efficiency2 = syn_fuel_tCO2_per_t/syn_fuel_mwh_per_t, # (tCO2/h)/(MWh/h) syn_fuel input 
+                capital_cost=assumptions.at["aircraft","fixed"])
+    
     # Heat subsystem: low temperature (space and water) heating only as yet: excludes industrial process heat.
     network.add("Bus","lo_temp_heat")
     
@@ -775,46 +920,6 @@ def solve_network(run_config):
                 efficiency = assumptions.at["H2 boiler","efficiency"],
                 capital_cost = assumptions.at["H2 boiler","fixed"])
 
-    # DAC subsystem
-    network.add("Bus", "CO2_atm_bus",
-                carrier="CO2")
-    network.add("Store", "CO2_atm_store",
-                bus="CO2_atm_bus",
-                e_nom_extendable=True,
-                e_nom_max = +np.inf,
-                e_min_pu = -1.0, # We want to allow net CDR against inital "zero" reference
-                capital_cost = 0.0, # €/tCO2
-                marginal_cost = 0.0, # €/(tCO2/h)
-                e_initial = 0.0) # Just track *changes* in atm CO2 stock
-
-    network.add("Bus", "CO2_conc_bus", # Concentrated/"pure" CO2
-                carrier="CO2")
-    network.add("Store", "CO2_conc_store",
-                bus="CO2_conc_bus",
-                e_nom_extendable=True,
-                e_nom_max = +np.inf,
-                e_nom_min = 0.0,
-                capital_cost = assumptions.at['CO2_conc_store','fixed'], # €/tCO2
-                marginal_cost = 0.0, # €/(tCO2/h)
-                e_initial = 0.0) # This may impose a startup artefact in CO2 *utilisation*
-
-    # No config var limits for DAC capacity: we assume this can be freely driven to meet
-    # custom constraint on total CO2 removal (if any).
-    network.add("Link", "DAC",
-                bus0 = "local-elec-grid", # Primary input: electricity, MW
-                bus1 = "CO2_conc_bus", # Primary output, conc. CO2, tCO2/h
-                bus2 = "CO2_atm_bus",
-                    # Secondary input (neg efficiency!):
-                    # dilute CO2 from atm, tCO2/h
-                efficiency = assumptions.at['DAC','efficiency'], # tCO2/MWh
-                efficiency2 = -assumptions.at['DAC','efficiency'], # Conservation of CO2 mass
-                p_nom_extendable = True,
-                p_nom_min = 0.0,
-                    # Default, but stated explicitly to emphasise that DAC plant can't be
-                    # operated in reverse (somehow generate power by releasing CO2 to atmosphere!?)
-                capital_cost=assumptions.at['DAC','fixed'] # /MW input capacity (p_nom)
-                )
-                
     # Custom constraints:
     
     def extra_functionality(network,snapshots):
