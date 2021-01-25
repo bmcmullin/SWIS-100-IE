@@ -658,10 +658,7 @@ def solve_network(run_config):
                 e_nom_max = +np.inf,
                 e_nom_min = 0.0,
                 capital_cost = assumptions.at['CO2_conc_store','fixed'], # €/tCO2
-                marginal_cost = 0.0, # €/(tCO2/h)
-                # Leave e_initial unset so that it is
-                # as an optimisation variable to allow for
-                # possible "start up" buffer for FT
+                marginal_cost = 0.0 # €/(tCO2/h)
                 )
 
     # No config var limits for DAC capacity: we assume this can be freely driven to meet
@@ -685,19 +682,21 @@ def solve_network(run_config):
     network.add("Bus","syn_fuel_bus",
                 carrier="syn_fuel")
 
-    # In practice, we would deploy some amount of syn_fuel buffer
-    # store; but in the absence of high-resolution time
-    # variability for air transport load, we can't optimize a
-    # suitable size for such a buffer here. So just omit
-    # altogether for simplicity?
+    # In practice, a syn_fuel store would be essential to buffer
+    # the operation of the FT plant from short term fluctuations
+    # in fuel demand. But in the absence of high-resolution time
+    # variability for air transport load, that isn't really an
+    # issue here. However: there is still a need to have the buffer so
+    # that syn_fuel is *immediately* available at startup. This
+    # startup amount is optimised when we set e_cyclic=True.
     
-    # network.add("Store", "syn_fuel_store",
-    #             bus="syn_fuel_bus",
-    #             e_nom_extendable=True,
-    #             e_nom_max = +np.inf,
-    #             capital_cost = 0.0, # €/MW
-    #             marginal_cost = 0.0, # €/MWh)
-    #             e_initial = 0.0)
+    network.add("Store", "syn_fuel_store",
+                bus="syn_fuel_bus",
+                e_nom_extendable=True,
+                e_nom_max = +np.inf,
+                capital_cost = 0.0, # €/MWh
+                marginal_cost = 0.0, # €/MWh)
+                e_cyclic = True)
 
     h2_specific_energy = 39.4 # MWh/tH2
         # ~39,400 Wh/kg https://en.wikipedia.org/wiki/Energy_density
@@ -710,7 +709,7 @@ def solve_network(run_config):
                     # Secondary input (neg "efficiency"!):
                     # conc. CO2, tCO2/h
                 efficiency = assumptions.at['FT','efficiency'], # dimensionless (MWh syn_fuel/MWh H2)
-                efficiency2 = h2_specific_energy/co2_atomic_mass,
+                efficiency2 = -h2_specific_energy/co2_atomic_mass,
                     # (MWh syn_fuel / tCO2)/h
                     # *Very* roughly, need ~equal molar amounts of H2 and CO2 to
                     # synthesize "long-chain" hydrocarbons?
@@ -1082,7 +1081,7 @@ def gather_run_stats(run_config, network):
             run_stats[l+" mean_p (GW)"] = (total_e/(total_hours*1.0e3))
             run_stats[l+" min_p (GW)"] = network.loads_t.p[l].min()/1.0e3
 
-        # Special stats for DAC "load"; some duplication with generic link stats
+        # Special stats for DAC "load"
         dac_p_nom = network.links.p_nom_opt['DAC']
         dac_total_e = network.links.loc['DAC','e_load']
         run_stats["DAC i/p capacity nom (GW)"] = (dac_p_nom/1.0e3)
@@ -1112,6 +1111,20 @@ def gather_run_stats(run_config, network):
             run_stats[g+" capacity factor act (%)"] = (
                 e_dispatched/(network.generators.p_nom_opt[g]*total_hours))*100.0
 
+        # Customised stats for FT
+        ft_p_nom = network.links.p_nom_opt['FT']
+        ft_e0=network.links.at['FT','e0']
+        ft_e1=network.links.at['FT','e1']
+        ft_e2=network.links_t.p2['FT'].sum() * snapshot_interval
+        ft_e_loss=-network.links.at['FT','e_loss']
+        run_stats["FT i/p capacity nom (GW)"] = (ft_p_nom/1.0e3)
+        run_stats["FT energy input (TWh H2)"] = ft_e0/1.0e6
+        run_stats["FT CO2 input (tCO2)"] = ft_e2/1.0e6
+        run_stats["FT energy output (TWh syn_fuel)"] = -ft_e1/1.0e6
+        run_stats["FT energy loss (TWh)"] = ft_e_loss/1.0e6
+        run_stats["FT capacity factor (%)"] = (
+            ft_e0/(ft_p_nom*total_hours))*100.0
+
         links_final_conversion = ["BEV", "FCEV", "Aircraft", "ASHP", "H2_boiler"]
         for l in links_final_conversion:
             p_nom = network.links.p_nom_opt[l]
@@ -1121,7 +1134,6 @@ def gather_run_stats(run_config, network):
             e_loss=-network.links.at[l,'e_loss']
             #e_load=-network.links.at[l,'e_load']
             run_stats[l+" i/p capacity nom (GW)"] = (p_nom/1.0e3)
-            #run_stats[l+" energy input (TWh)"] = links_e0[l]/1.0e6
             run_stats[l+" energy input (TWh)"] = e0/1.0e6
             run_stats[l+" energy output (TWh)"] = -e1/1.0e6
             run_stats[l+" energy gain (TWh)"] = e_gain/1.0e6
@@ -1143,6 +1155,7 @@ def gather_run_stats(run_config, network):
 
         run_stats["CO2_atm_store e_nom (MtCO2)"] = network.stores.e_nom_opt["CO2_atm_store"]/1.0e6
         run_stats["CO2_conc_store e_nom (MtCO2)"] = network.stores.e_nom_opt["CO2_conc_store"]/1.0e6
+        run_stats["syn_fuel_store e_initial (TWh)"] = (network.stores_t.e["syn_fuel_store"].iat[0])/1.0e6
         
         ic_p = network.links.p_nom_opt["ic-export"]
         run_stats["IC power (GW)"] = ic_p/1.0e3
@@ -1257,6 +1270,18 @@ def gather_run_stats(run_config, network):
             ((network.buses_t.marginal_price["surface_transport_final"]*network.loads_t.p["surface-transport-demand"]).sum())
                                   / network.loads_t.p["surface-transport-demand"].sum())
         
+        run_stats["H2 for FT weighted mean notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["H2"]*network.links_t.p0["FT"]).sum())
+                                  / network.links_t.p0["FT"].sum())
+
+        run_stats["CO2 for FT weighted mean notional shadow price (€/tCO2)"] = (
+            ((network.buses_t.marginal_price["CO2_conc_bus"]*network.links_t.p2["FT"]).sum())
+                                  / network.links_t.p2["FT"].sum())
+
+        run_stats["syn_fuel from FT weighted mean notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["syn_fuel_bus"]*network.links_t.p1["FT"]).sum())
+                                  / network.links_t.p1["FT"].sum())
+
         run_stats["Air transport load weighted mean notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["air_transport_final"]*network.loads_t.p["air-transport-demand"]).sum())
                                   / network.loads_t.p["air-transport-demand"].sum())
