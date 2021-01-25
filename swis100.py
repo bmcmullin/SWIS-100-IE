@@ -54,6 +54,7 @@ config_converters = {
     'constant_elec_load_flag' : bool,
     'constant_lo_temp_heat_load_flag' : bool,
     'constant_surface_transport_load_flag' : bool,
+    'constant_air_transport_load_flag' : bool,
     'elec_load_scope' : str,
     'elec_load_year_start' : int,
     'heat_load_year_start' : int,
@@ -247,7 +248,7 @@ logger.info("Loading transport demand annual timeseries data (seai)")
 # Public Passenger Services
 # Rail
 # Domestic Aviation
-# International Aviation
+# Intermational Aviation (NOTE typo!)
 # Fuel Tourism
 # Navigation [assume dominated by international?]
 # Unspecified
@@ -681,7 +682,7 @@ def solve_network(run_config):
                 )
 
     # Fischer-Tropsch (FT) synthetic (liquid hydrocarbon fuel) subsystem
-    network.add("Bus","syn_fuel_bus"
+    network.add("Bus","syn_fuel_bus",
                 carrier="syn_fuel")
 
     # In practice, we would deploy some amount of syn_fuel buffer
@@ -802,7 +803,7 @@ def solve_network(run_config):
     # Configure required air_transport_load
 
     aviation_cols = ['Domestic Aviation', 
-                    'International Aviation']
+                    'Intermational Aviation']
 
     # Configure required air_transport_load (constant or timeseries)
     if (run_config['constant_air_transport_load_flag']) :
@@ -821,7 +822,7 @@ def solve_network(run_config):
                     str(air_transport_load_year_start - 1) : 
                     str(air_transport_load_year_end +1),
                     aviation_cols].sum(axis=1)
-                * assumptions.at['aircraft','efficiency'])
+                * assumptions.at['Aircraft','efficiency'])
             # For consistency with surface transport; but note
             # there is no currently credible prospect of dramatic
             # improvements in "tank-to-thrust" aircraft
@@ -842,21 +843,21 @@ def solve_network(run_config):
 
     network.add("Load","air-transport-demand",
                 bus="air_transport_final",
-                p_set= air_transport_final)
+                p_set=air_transport_load)
 
     mwhr_per_mj = 277e-6
     syn_fuel_mj_per_kg = 44.0 # https://en.wikipedia.org/wiki/Aviation_fuel#Energy_content
     syn_fuel_mwh_per_t = (syn_fuel_mj_per_kg / 1.0e3) * mwhr_per_mj
     syn_fuel_tCO2_per_t = 3.16 # https://www.eesi.org/papers/view/fact-sheet-the-growth-in-greenhouse-gas-emissions-from-commercial-aviation
         # Neglect non-CO2 warming effects!?
-    network.add("Link", "aircraft",
+    network.add("Link", "Aircraft",
                 bus0="syn_fuel_bus",
                 bus1="air_transport_final",
                 bus2="co2_atm_bus",
                 p_nom_extendable=True, # No min/max config: determined from load
-                efficiency=assumptions.at["aircraft","efficiency"],
+                efficiency=assumptions.at["Aircraft","efficiency"],
                 efficiency2 = syn_fuel_tCO2_per_t/syn_fuel_mwh_per_t, # (tCO2/h)/(MWh/h) syn_fuel input 
-                capital_cost=assumptions.at["aircraft","fixed"])
+                capital_cost=assumptions.at["Aircraft","fixed"])
     
     # Heat subsystem: low temperature (space and water) heating only as yet: excludes industrial process heat.
     network.add("Bus","lo_temp_heat")
@@ -1111,7 +1112,7 @@ def gather_run_stats(run_config, network):
             run_stats[g+" capacity factor act (%)"] = (
                 e_dispatched/(network.generators.p_nom_opt[g]*total_hours))*100.0
 
-        links_final_conversion = ["BEV", "FCEV", "ASHP", "H2_boiler"]
+        links_final_conversion = ["BEV", "FCEV", "Aircraft", "ASHP", "H2_boiler"]
         for l in links_final_conversion:
             p_nom = network.links.p_nom_opt[l]
             e0=network.links.at[l,'e0']
@@ -1255,6 +1256,10 @@ def gather_run_stats(run_config, network):
         run_stats["Surface transport load weighted mean notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["surface_transport_final"]*network.loads_t.p["surface-transport-demand"]).sum())
                                   / network.loads_t.p["surface-transport-demand"].sum())
+        
+        run_stats["Air transport load weighted mean notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["air_transport_final"]*network.loads_t.p["air-transport-demand"]).sum())
+                                  / network.loads_t.p["air-transport-demand"].sum())
         
         run_stats["Offshore wind notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.generators_t.p["offshore wind"]).sum())
