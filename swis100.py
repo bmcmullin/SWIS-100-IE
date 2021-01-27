@@ -685,7 +685,7 @@ def solve_network(run_config):
     # In practice, a syn_fuel store would be essential to buffer
     # the operation of the FT plant from short term fluctuations
     # in fuel demand. But in the absence of high-resolution time
-    # variability for air transport load, that isn't really an
+    # variability for syn_fuel consumption, that isn't really an
     # issue here. However: there is still a need to have the buffer so
     # that syn_fuel is *immediately* available at startup. This
     # startup amount is optimised when we set e_cyclic=True.
@@ -698,10 +698,22 @@ def solve_network(run_config):
                 marginal_cost = 0.0, # €/MWh)
                 e_cyclic = True)
 
-    h2_specific_energy = 39.4 # MWh/tH2
-        # ~39,400 Wh/kg https://en.wikipedia.org/wiki/Energy_density
-        # /1e3 for MWh/tH2
-    co2_atomic_mass = 44.0 
+    mwhr_per_gj = 0.2778 # https://www.seai.ie/data-and-insights/seai-statistics/conversion-factors/
+    mwhr_per_mj = mwhr_per_gj / 1.0e3
+    syn_fuel_mj_per_kg = 44.0 # https://en.wikipedia.org/wiki/Aviation_fuel#Energy_content
+    syn_fuel_mj_per_t = syn_fuel_mj_per_kg * 1.0e3
+    syn_fuel_mwh_per_t = syn_fuel_mj_per_t * mwhr_per_mj
+    syn_fuel_tCO2_per_t = 3.16 # https://www.eesi.org/papers/view/fact-sheet-the-growth-in-greenhouse-gas-emissions-from-commercial-aviation
+        # "Jet fuel consumption produces CO2 at a defined ratio
+        # (3.16 kilograms of CO2 per 1 kilogram of fuel
+        # consumed), regardless of the phase of flight." Rated
+        # tCO2 *emissions* per tonne of "typical" syn_fuel (here
+        # taken as jet fuel) combustion. We will equate this to
+        # the required *input* of CO2 to synthesize that amount
+        # of syn_fuel, so that the CO2 flows in production and
+        # combustion of syn_fuel will exactly balance.
+    syn_fuel_tCO2_per_MWh = syn_fuel_tCO2_per_t / syn_fuel_mwh_per_t
+
     network.add("Link", "FT",
                 bus0 = "H2", # Primary input: H2, MW
                 bus1 = "syn_fuel_bus", # Primary output, syn_fuel, MW
@@ -709,10 +721,15 @@ def solve_network(run_config):
                     # Secondary input (neg "efficiency"!):
                     # conc. CO2, tCO2/h
                 efficiency = assumptions.at['FT','efficiency'], # dimensionless (MWh syn_fuel/MWh H2)
-                efficiency2 = -h2_specific_energy/co2_atomic_mass,
-                    # (MWh syn_fuel / tCO2)/h
-                    # *Very* roughly, need ~equal molar amounts of H2 and CO2 to
-                    # synthesize "long-chain" hydrocarbons?
+                efficiency2 = -(assumptions.at['FT','efficiency'] *
+                                 syn_fuel_tCO2_per_MWh),
+                    # This should be the required flow of input
+                    # CO2 (tCO2/h) per MW of input H2. Negative
+                    # because it is an input flow to the
+                    # link. Multiply by
+                    # assumptions.at['FT','efficiency'] to scale
+                    # according to the syn_fuel output, rather
+                    # than the H2 input.
                 p_nom_extendable = True,
                 p_nom_min = 0.0,
                     # Default, but stated explicitly to emphasise that FT plant won't be
@@ -844,18 +861,13 @@ def solve_network(run_config):
                 bus="air_transport_final",
                 p_set=air_transport_load)
 
-    mwhr_per_mj = 277e-6
-    syn_fuel_mj_per_kg = 44.0 # https://en.wikipedia.org/wiki/Aviation_fuel#Energy_content
-    syn_fuel_mwh_per_t = (syn_fuel_mj_per_kg / 1.0e3) * mwhr_per_mj
-    syn_fuel_tCO2_per_t = 3.16 # https://www.eesi.org/papers/view/fact-sheet-the-growth-in-greenhouse-gas-emissions-from-commercial-aviation
-        # Neglect non-CO2 warming effects!?
     network.add("Link", "Aircraft",
                 bus0="syn_fuel_bus",
                 bus1="air_transport_final",
                 bus2="co2_atm_bus",
                 p_nom_extendable=True, # No min/max config: determined from load
                 efficiency=assumptions.at["Aircraft","efficiency"],
-                efficiency2 = syn_fuel_tCO2_per_t/syn_fuel_mwh_per_t, # (tCO2/h)/(MWh/h) syn_fuel input 
+                efficiency2 = syn_fuel_tCO2_per_MWh, # (tCO2/h emission)/[(MWh/h) of syn_fuel input] 
                 capital_cost=assumptions.at["Aircraft","fixed"])
     
     # Heat subsystem: low temperature (space and water) heating only as yet: excludes industrial process heat.
