@@ -271,9 +271,9 @@ transport_load_data_raw.index=pd.to_datetime(transport_load_data_raw.index,forma
 transport_load_data_raw.index = transport_load_data_raw.index+timedelta(hours=(365.0*12.0))
         # anchor at mid-year (for later interpolation across years)
         # (this is off by 12 hours in leap years - but we neglect that!)
-ktoe_to_MWh=11630.0 # https://www.unitjuggler.com/convert-energy-from-ktoe-to-MWh.html
+mwh_per_ktoe=11630.0 # https://www.unitjuggler.com/convert-energy-from-ktoe-to-MWh.html
 transport_load_data_raw = (
-    (transport_load_data_raw*ktoe_to_MWh)/(365.0*24))
+    (transport_load_data_raw*mwh_per_ktoe)/(365.0*24))
     # Annual ktoe -> average continuous MW
     # (Neglect slight conversion error in leap years...)
 
@@ -864,11 +864,11 @@ def solve_network(run_config):
     network.add("Link", "Aircraft",
                 bus0="syn_fuel_bus",
                 bus1="air_transport_final",
-                bus2="co2_atm_bus",
-                p_nom_extendable=True, # No min/max config: determined from load
-                efficiency=assumptions.at["Aircraft","efficiency"],
+                bus2="CO2_atm_bus",
+                p_nom_extendable = True, # No min/max config: determined from load
+                efficiency = assumptions.at["Aircraft","efficiency"],
                 efficiency2 = syn_fuel_tCO2_per_MWh, # (tCO2/h emission)/[(MWh/h) of syn_fuel input] 
-                capital_cost=assumptions.at["Aircraft","fixed"])
+                capital_cost = assumptions.at["Aircraft","fixed"])
     
     # Heat subsystem: low temperature (space and water) heating only as yet: excludes industrial process heat.
     network.add("Bus","lo_temp_heat")
