@@ -1131,7 +1131,7 @@ def gather_run_stats(run_config, network):
         ft_e_loss=-network.links.at['FT','e_loss']
         run_stats["FT i/p capacity nom (GW)"] = (ft_p_nom/1.0e3)
         run_stats["FT energy input (TWh H2)"] = ft_e0/1.0e6
-        run_stats["FT CO2 input (tCO2)"] = ft_e2/1.0e6
+        run_stats["FT CO2 input (MtCO2)"] = ft_e2/1.0e6
         run_stats["FT energy output (TWh syn_fuel)"] = -ft_e1/1.0e6
         run_stats["FT energy loss (TWh)"] = ft_e_loss/1.0e6
         run_stats["FT capacity factor (%)"] = (
