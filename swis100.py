@@ -641,6 +641,7 @@ def solve_network(run_config):
     # DAC subsystem
     network.add("Bus", "CO2_atm_bus",
                 carrier="CO2")
+    
     network.add("Store", "CO2_atm_store",
                 bus="CO2_atm_bus",
                 e_nom_extendable=True,
@@ -652,13 +653,16 @@ def solve_network(run_config):
 
     network.add("Bus", "CO2_conc_bus", # Concentrated/"pure" CO2
                 carrier="CO2")
+    
     network.add("Store", "CO2_conc_store",
                 bus="CO2_conc_bus",
                 e_nom_extendable=True,
                 e_nom_max = +np.inf,
                 e_nom_min = 0.0,
+                e_initial = 0.0, # This is default, but note explicitly anyway
+                e_cyclic = False,  # This is default, but note explicitly anyway
                 capital_cost = assumptions.at['CO2_conc_store','fixed'], # €/tCO2
-                marginal_cost = 0.0 # €/(tCO2/h)
+                marginal_cost = 0.0 # €/tCO2 (assumed negligible...)
                 )
 
     # No config var limits for DAC capacity: we assume this can be freely driven to meet

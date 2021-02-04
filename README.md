@@ -9,7 +9,7 @@
   award reference SEAI RDD/00246 2018.
 - **Author:** Barry McMullin, barry.mcmullin@dcu.ie
 - **Release:** Pre-release (initial development)
-- **© 2020:** [Dublin City University](http://www.dcu.ie/) (unless indicated otherwise)
+- **© 2021:** [Dublin City University](http://www.dcu.ie/) (unless indicated otherwise)
 - **Licence:** [GNU GENERAL PUBLIC LICENSE Version 3](https://www.gnu.org/licenses/gpl-3.0.en.html)
 
 This package is derived from: [Optimal
