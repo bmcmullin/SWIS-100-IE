@@ -1252,7 +1252,7 @@ def gather_run_stats(run_config, network):
         run_stats["System notional cost (B€)"] = network.objective/1.0e9 # Scale (by Nyears) to p.a.?
         run_stats["System notional LCOE (€/MWh)"] = network.objective/total_e_load
 
-        buses = ["local-elec-grid", "H2"]
+        buses = ["local-elec-grid", "H2", "syn_fuel_bus", "lo_temp_heat", "surface_transport_final", "air_transport_final"]
         for b in buses:
             run_stats[b+" max notional shadow price (€/MWh)"] = (
                 network.buses_t.marginal_price[b].max())
@@ -1261,6 +1261,15 @@ def gather_run_stats(run_config, network):
             run_stats[b+" min notional shadow price (€/MWh)"] = (
                 network.buses_t.marginal_price[b].min())
 
+        buses = ["CO2_conc_bus", "CO2_atm_bus"]
+        for b in buses:
+            run_stats[b+" max notional shadow price (€/tCO2)"] = (
+                network.buses_t.marginal_price[b].max())
+            run_stats[b+" unweighted mean notional shadow price (€/tCO2)"] = (
+                network.buses_t.marginal_price[b].mean())
+            run_stats[b+" min notional shadow price (€/tCO2)"] = (
+                network.buses_t.marginal_price[b].min())
+            
         # All the following are "weighted means": shadow prices at a bus weighted by some flow to or from that bus 
 
         run_stats["Elec. load weighted mean notional shadow price (€/MWh)"] = (
