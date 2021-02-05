@@ -77,6 +77,24 @@ config_converters = {
     'weather_year_start' : int,
 }
 
+# Define some utility conversion factors
+
+mwh_per_ktoe=11630.0 # https://www.unitjuggler.com/convert-energy-from-ktoe-to-MWh.html
+mwhr_per_gj = 0.2778 # https://www.seai.ie/data-and-insights/seai-statistics/conversion-factors/
+mwhr_per_mj = mwhr_per_gj / 1.0e3
+syn_fuel_mj_per_kg = 44.0 # https://en.wikipedia.org/wiki/Aviation_fuel#Energy_content
+syn_fuel_mj_per_t = syn_fuel_mj_per_kg * 1.0e3
+syn_fuel_mwh_per_t = syn_fuel_mj_per_t * mwhr_per_mj
+syn_fuel_tCO2_per_t = 3.16 # https://www.eesi.org/papers/view/fact-sheet-the-growth-in-greenhouse-gas-emissions-from-commercial-aviation
+    # "Jet fuel consumption produces CO2 at a defined ratio
+    # (3.16 kilograms of CO2 per 1 kilogram of fuel
+    # consumed), regardless of the phase of flight." Rated
+    # tCO2 *emissions* per tonne of "typical" syn_fuel (here
+    # taken as jet fuel) combustion. We will equate this to
+    # the required *input* of CO2 to synthesize that amount
+    # of syn_fuel, so that the CO2 flows in production and
+    # combustion of syn_fuel will exactly balance.
+syn_fuel_tCO2_per_MWh = syn_fuel_tCO2_per_t / syn_fuel_mwh_per_t
 
 # ## Read in required static data
 
@@ -271,7 +289,6 @@ transport_load_data_raw.index=pd.to_datetime(transport_load_data_raw.index,forma
 transport_load_data_raw.index = transport_load_data_raw.index+timedelta(hours=(365.0*12.0))
         # anchor at mid-year (for later interpolation across years)
         # (this is off by 12 hours in leap years - but we neglect that!)
-mwh_per_ktoe=11630.0 # https://www.unitjuggler.com/convert-energy-from-ktoe-to-MWh.html
 transport_load_data_raw = (
     (transport_load_data_raw*mwh_per_ktoe)/(365.0*24))
     # Annual ktoe -> average continuous MW
@@ -701,22 +718,6 @@ def solve_network(run_config):
                 capital_cost = 0.0, # €/MWh
                 marginal_cost = 0.0, # €/MWh)
                 e_cyclic = True)
-
-    mwhr_per_gj = 0.2778 # https://www.seai.ie/data-and-insights/seai-statistics/conversion-factors/
-    mwhr_per_mj = mwhr_per_gj / 1.0e3
-    syn_fuel_mj_per_kg = 44.0 # https://en.wikipedia.org/wiki/Aviation_fuel#Energy_content
-    syn_fuel_mj_per_t = syn_fuel_mj_per_kg * 1.0e3
-    syn_fuel_mwh_per_t = syn_fuel_mj_per_t * mwhr_per_mj
-    syn_fuel_tCO2_per_t = 3.16 # https://www.eesi.org/papers/view/fact-sheet-the-growth-in-greenhouse-gas-emissions-from-commercial-aviation
-        # "Jet fuel consumption produces CO2 at a defined ratio
-        # (3.16 kilograms of CO2 per 1 kilogram of fuel
-        # consumed), regardless of the phase of flight." Rated
-        # tCO2 *emissions* per tonne of "typical" syn_fuel (here
-        # taken as jet fuel) combustion. We will equate this to
-        # the required *input* of CO2 to synthesize that amount
-        # of syn_fuel, so that the CO2 flows in production and
-        # combustion of syn_fuel will exactly balance.
-    syn_fuel_tCO2_per_MWh = syn_fuel_tCO2_per_t / syn_fuel_mwh_per_t
 
     network.add("Link", "FT",
                 bus0 = "H2", # Primary input: H2, MW
@@ -1307,6 +1308,16 @@ def gather_run_stats(run_config, network):
             ((network.buses_t.marginal_price["syn_fuel_bus"]*network.links_t.p1["FT"]).sum())
                                   / network.links_t.p1["FT"].sum())
 
+        run_stats["Aircraft syn_fuel weighted mean notional shadow price (€/MWh)"] = (
+            ((network.buses_t.marginal_price["syn_fuel_bus"]*network.links_t.p0["Aircraft"]).sum())
+                                  / network.links_t.p0["Aircraft"].sum())
+        run_stats["Aircraft CO2 weighted mean notional shadow price (€/tCO2)"] = (
+             - ((network.buses_t.marginal_price["CO2_atm_bus"]*network.links_t.p2["Aircraft"]).sum())
+                                  / network.links_t.p2["Aircraft"].sum()) # minus because cost *to* Aircraft link
+        run_stats["Aircraft fuel-equivalent weighted mean notional shadow price (€/MWh)"] = (
+            run_stats["Aircraft syn_fuel weighted mean notional shadow price (€/MWh)"] +
+            (run_stats["Aircraft CO2 weighted mean notional shadow price (€/tCO2)"] * syn_fuel_tCO2_per_MWh))
+        
         run_stats["Air transport load weighted mean notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["air_transport_final"]*network.loads_t.p["air-transport-demand"]).sum())
                                   / network.loads_t.p["air-transport-demand"].sum())
