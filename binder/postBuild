@@ -1,0 +1,34 @@
+#!/bin/bash
+
+echo "postBuild: installing source datasets..."
+
+set -ex # exit on error
+
+mkdir -p ninja
+cd ninja
+wget https://www.renewables.ninja/static/downloads/ninja_europe_pv_v1.1.zip
+unzip ninja_europe_pv_v1.1.zip ninja_pv_europe_v1.1_sarah.csv
+rm -f ninja_europe_pv_v1.1.zip
+wget https://www.renewables.ninja/static/downloads/ninja_europe_wind_v1.1.zip
+unzip ninja_europe_wind_v1.1.zip ninja_wind_europe_v1.1_current_on-offshore.csv
+rm -f ninja_europe_wind_v1.1.zip
+cd ..
+
+mkdir -p eirgrid
+cd eirgrid
+wget http://www.eirgridgroup.com/site-files/library/EirGrid/System-Data-Qtr-Hourly-2014-2015.xlsx
+wget http://www.eirgridgroup.com/site-files/library/EirGrid/System-Data-Qtr-Hourly-2016-2017.xlsx
+wget http://www.eirgridgroup.com/site-files/library/EirGrid/System-Data-Qtr-Hourly-2018-2019.xlsx
+cd ..
+
+mkdir -p seai
+cd seai
+wget https://www.seai.ie/publications/Energy-by-Fuel.xlsx
+cd ..
+
+mkdir -p when2heat
+cd when2heat
+wget https://data.open-power-system-data.org/when2heat/2019-08-06/when2heat.csv
+cd ..
+
+echo "postBuild: done!"
