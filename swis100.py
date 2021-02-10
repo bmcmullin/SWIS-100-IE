@@ -534,55 +534,97 @@ def solve_network(run_config):
                 #Small cost to prefer curtailment to destroying energy in storage, wind curtails before solar
                 capital_cost = assumptions.at['offshore wind','fixed'])
 
-    # Model interconnection *very* crudely as an indefinitely (?) large external store, imposing
-    # no local cost except for the interconnector to it. Set e_cyclic=True so that, over the 
-    # modelled period, zero nett exchange, so that we don't have to 
-    # pick (guess?) relative pricing for market-based import/export modelling.
-    # from the local perspective we are just exploiting it as a "cheap" way to do temporal
-    # shifting, once the interconnector is built and subject to the efficiency losses of the
-    # interconnector (only). Of course this effectively excludes nett exports as a trade opportunity...
-    # We do impose a (local system) capital charge on the interconnector itself; and assume that 
-    # this is shared ~80:50 between the local system and remote-elec-grid (between IE state and European 
-    # Union Funding in case of EWIC of 460:110 M€).
+    ### LEGACY: Interconnection as Store rather than StorageUnit which allows independent optimisation
+    ### of power and energy capacities.
+    
+    # # Model interconnection *very* crudely as an indefinitely (?) large external store, imposing
+    # # no local cost except for the interconnector to it. Set e_cyclic=True so that, over the 
+    # # modelled period, zero nett exchange, so that we don't have to 
+    # # pick (guess?) relative pricing for market-based import/export modelling.
+    # # from the local perspective we are just exploiting it as a "cheap" way to do temporal
+    # # shifting, once the interconnector is built and subject to the efficiency losses of the
+    # # interconnector (only). Of course this effectively excludes nett exports as a trade opportunity...
+    # # We do impose a (local system) capital charge on the interconnector itself; and assume that 
+    # # this is shared ~80:20 between the local system and remote-elec-grid (between IE state and European 
+    # # Union Funding in case of EWIC of 460:110 M€).
+    # # (https://www.irishtimes.com/news/east-west-interconnector-is-opened-1.737858)
+    # # This all skates over the NI integration connection, which arguably deserves finer 
+    # # grained representation (given similar wind var profile).
+
+    # network.add("Bus","remote-elec-grid")
+
+    # network.add("Store","remote-elec-grid-buffer",
+    #             bus = "remote-elec-grid",
+    #             e_nom_extendable = True,
+    #             e_nom_max = run_config['IC_max_e (TWh)']*1.0e6, 
+    #                      # TWh -> MWh
+    #             e_cyclic=True,
+    #             capital_cost=0.0) # Assume no local cost for existence of arbitrarily large ext grid
+
+    # # ic-export and ic-import links are two logical representations of the *same*
+    # # underlying hardware, operating in different directions. A single bi-directional link
+    # # representation is not possible if there are any losses, i.e., efficiency < 1.0. Note
+    # # addition below of global constraint, via extra_functionality(), to ensure import and
+    # # export "links" have the same p_nom (on their respective input sides).
+    # network.add("Link","ic-export",
+    #             bus0 = "local-elec-grid",
+    #             bus1 = "remote-elec-grid",
+    #             efficiency = assumptions.at['interconnector','efficiency'],
+    #             p_nom_extendable = True,
+    #             p_nom_min = run_config['IC_min_p (GW)']*1e3, # GW -> MW
+    #             p_nom_max = run_config['IC_max_p (GW)']*1e3, # GW -> MW
+    #             capital_cost=assumptions.at['interconnector','fixed']*0.8
+    #              # Capital cost "shared" somewhat (20%?) by remote-elec-grid operator(s)
+    #             )
+ 
+    # network.add("Link","ic-import",
+    #             bus0 = "remote-elec-grid",
+    #             bus1 = "local-elec-grid",
+    #             efficiency = assumptions.at['interconnector','efficiency'],
+    #             p_nom_extendable = True,
+    #             capital_cost=0.0
+    #              # Capital cost already accounted in ic-export view of link
+    #             )
+
+    ### End legacy Interconnection as Store
+
+    # Model interconnection *very* crudely as a StorageUnit,
+    # imposing no local cost except for the interconnector to
+    # it. The energy storage capacity is a configuration variable
+    # setting the max-hours parameter (so storage capacity is not
+    # optimised separately by lopf()). Set
+    # cyclic_state_of_charge=True so that, over the modelled
+    # period, there is zero nett exchange.  From the local perspective we are just
+    # exploiting it as a "cheap" way to do temporal shifting,
+    # once the interconnector is built and subject to the
+    # efficiency losses of the interconnector (only). 
+    # This effectively excludes nett exports as a trade
+    # opportunity.  We do impose a (local system) capital charge
+    # on the interconnector itself; and assume that this is
+    # shared ~80:20 between the local system and remote grid
+    # system (between IE state and European Union Funding in case
+    # of EWIC of 460:110 M€).
     # (https://www.irishtimes.com/news/east-west-interconnector-is-opened-1.737858)
-    # This all skates over the NI integration connection, which arguably deserves finer 
-    # grained representation (given similar wind var profile).
-
-    network.add("Bus","remote-elec-grid")
-
-    network.add("Store","remote-elec-grid-buffer",
-                bus = "remote-elec-grid",
-                e_nom_extendable = True,
-                e_nom_max = run_config['IC_max_e (TWh)']*1.0e6, 
-                         # TWh -> MWh
-                e_cyclic=True,
-                capital_cost=0.0) # Assume no local cost for existence of arbitrarily large ext grid
-
-    # ic-export and ic-import links are two logical representations of the *same*
-    # underlying hardware, operating in different directions. A single bi-directional link
-    # representation is not possible if there are any losses, i.e., efficiency < 1.0. Note
-    # addition below of global constraint, via extra_functionality(), to ensure import and
-    # export "links" have the same p_nom (on their respective input sides).
-    network.add("Link","ic-export",
-                bus0 = "local-elec-grid",
-                bus1 = "remote-elec-grid",
-                efficiency = assumptions.at['interconnector','efficiency'],
+    # This all skates over the NI integration connection, which
+    # arguably deserves finer grained representation (given
+    # similar wind var profile).
+   
+    network.add("StorageUnit",
+                "ic",
+                bus = "local-elec-grid",
                 p_nom_extendable = True,
                 p_nom_min = run_config['IC_min_p (GW)']*1e3, # GW -> MW
                 p_nom_max = run_config['IC_max_p (GW)']*1e3, # GW -> MW
+                max_hours = run_config['IC_max_hours'],
+                cyclic_state_of_charge=True,
+                efficiency_store = assumptions.at['interconnector','efficiency'],
+                efficiency_dispatch = assumptions.at['interconnector','efficiency'],
+                marginal_cost=0.0, # Tacit cost only, via efficiency < 1.0
                 capital_cost=assumptions.at['interconnector','fixed']*0.8
                  # Capital cost "shared" somewhat (20%?) by remote-elec-grid operator(s)
                 )
- 
-    network.add("Link","ic-import",
-                bus0 = "remote-elec-grid",
-                bus1 = "local-elec-grid",
-                efficiency = assumptions.at['interconnector','efficiency'],
-                p_nom_extendable = True,
-                capital_cost=0.0
-                 # Capital cost already accounted in ic-export view of link
-                )
- 
+
+    
     # Battery storage
     network.add("Bus","battery")
 
@@ -942,12 +984,14 @@ def solve_network(run_config):
     def extra_functionality(network,snapshots):
         link_p_nom = get_var(network, "Link", "p_nom")
 
-        # Interconnector import and export links are constrained so that rated power capacity at the 
-        # *input* side (p0) is equal for both directions; so max available *output* power (p1) will 
-        # be less, in both directions, via the configured efficiency.
-        lhs = linexpr((1.0, link_p_nom["ic-export"]),
-                       (-1.0, link_p_nom["ic-import"]))
-        define_constraints(network, lhs, "=", 0.0, 'Link', 'ic_ratio')
+        ### LEGACY: interconnection as Store instead of StorageUnit
+        # # Interconnector import and export links are constrained so that rated power capacity at the 
+        # # *input* side (p0) is equal for both directions; so max available *output* power (p1) will 
+        # # be less, in both directions, via the configured efficiency.
+        # lhs = linexpr((1.0, link_p_nom["ic-export"]),
+        #                (-1.0, link_p_nom["ic-import"]))
+        # define_constraints(network, lhs, "=", 0.0, 'Link', 'ic_ratio')
+        ### LEGACY
 
         # Battery charge and discharge links are constrained so that rated power capacity at the 
         # network/grid bus (as opposed to the store bus) is equal for both charge and discharge.
@@ -1173,21 +1217,33 @@ def gather_run_stats(run_config, network):
         run_stats["CO2_atm_store e_nom (MtCO2)"] = network.stores.e_nom_opt["CO2_atm_store"]/1.0e6
         run_stats["CO2_conc_store e_nom (MtCO2)"] = network.stores.e_nom_opt["CO2_conc_store"]/1.0e6
         run_stats["syn_fuel_store e_initial (TWh)"] = (network.stores_t.e["syn_fuel_store"].iat[0])/1.0e6
-        
-        ic_p = network.links.p_nom_opt["ic-export"]
-        run_stats["IC power (GW)"] = ic_p/1.0e3
-            # NB: interconnector export and import p_nom are constrained to be equal
-            # (at the input side of the respective links)
-        ic_total_e = network.links.at["ic-export","e0"] + (-network.links.at["ic-import","e1"]) # On IE grid side
-        run_stats["IC transferred (TWh)"] = ic_total_e/1.0e6
-        run_stats["IC capacity factor (%)"] = ic_total_e/(
-            network.links.p_nom_opt["ic-export"]*total_hours)*100.0
-        remote_elec_grid_e = network.stores.e_nom_opt["remote-elec-grid-buffer"]
-        run_stats["remote-elec-grid 'store' (TWh)"] = remote_elec_grid_e/1.0e6
-        remote_elec_grid_h = remote_elec_grid_e/ic_p
-        run_stats["remote-elec-grid 'store' time (h)"] = remote_elec_grid_h
-        run_stats["remote-elec-grid 'store' time (d)"] = remote_elec_grid_h/24.0
 
+        ### LEGACY: interconnector as Store instead of StorageUnit
+        # ic_p = network.links.p_nom_opt["ic-export"]
+        # run_stats["IC power (GW)"] = ic_p/1.0e3
+        #     # NB: interconnector export and import p_nom are constrained to be equal
+        #     # (at the input side of the respective links)
+        # ic_total_e = network.links.at["ic-export","e0"] + (-network.links.at["ic-import","e1"]) # On IE grid side
+        # run_stats["IC transferred (TWh)"] = ic_total_e/1.0e6
+        # run_stats["IC capacity factor (%)"] = ic_total_e/(
+        #     network.links.p_nom_opt["ic-export"]*total_hours)*100.0
+        # remote_elec_grid_e = network.stores.e_nom_opt["remote-elec-grid-buffer"]
+        # run_stats["remote-elec-grid 'store' (TWh)"] = remote_elec_grid_e/1.0e6
+        # remote_elec_grid_h = remote_elec_grid_e/ic_p
+        # run_stats["remote-elec-grid 'store' time (h)"] = remote_elec_grid_h
+        # run_stats["remote-elec-grid 'store' time (d)"] = remote_elec_grid_h/24.0
+
+        # Customised stats for IC StorageUnit
+        ic_p = network.storageunits.p_nom_opt["ic"]
+        run_stats["IC power (GW)"] = ic_p/1.0e3
+        ic_e_max = ic_p*network.storageunits.max_hours["ic"]
+        run_stats["IC 'store' (TWh)"] = (ic_e_max)/1.0e6
+        ic_total_e = (
+            (network.storageunits_t.p_store.sum() + network.storageunits_t.p_dispatch.sum())
+            * snapshot_interval) # On IE grid side
+        run_stats["IC transferred (TWh)"] = ic_total_e/1.0e6
+        run_stats["IC capacity factor (%)"] = (ic_total_e/(ic_p*total_hours)) *100.0
+        
         # Battery "expected" to be "relatively" small so we represent stats as MW (power) or MWh (energy)
         battery_charge_p = network.links.p_nom_opt["battery charge"]
         run_stats["Battery charge/discharge capacity nom (MW)"] = battery_charge_p
@@ -1239,14 +1295,14 @@ def gather_run_stats(run_config, network):
         # from the available storage, based on the efficiencies of the respective
         # conversion paths. This is further complicated for H2 storage in that there are two
         # possible conversion pathways (OCGT and CCGT). Since CCGT has higher efficiency, we
-        # use it *unless* the deployed amount of CCGT is "negligible" compared to (mean) load_p...
+        # use it *unless* the deployed amount of CCGT is "negligible" compared to (mean) load_p.
         if (h2_store_CCGT_p > 0.01*mean_load_p) :
             h2_store_gen_efficiency = network.links.at["H2 CCGT","efficiency"]
         else :
             h2_store_gen_efficiency = network.links.at["H2 OCGT","efficiency"]
         total_avail_store_gen = ((h2_store_e*h2_store_gen_efficiency) +
                         (battery_store_e*network.links.at["battery discharge","efficiency"]) +
-                        (remote_elec_grid_e*network.links.at["ic-import","efficiency"]))
+                        ic_e_max)
 
         run_stats["System total usable store I+B+H2 (TWh)"] = total_avail_store_gen/1.0e6
         total_avail_store_gen_h = total_avail_store_gen/mean_load_p
@@ -1342,13 +1398,23 @@ def gather_run_stats(run_config, network):
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["battery discharge"]).sum())
                                   / network.links_t.p1["battery discharge"].sum())
 
+        ### LEGACY
+        # run_stats["IC export notional shadow price (€/MWh)"] = (
+        #     ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["ic-export"]).sum())
+        #                           / network.links_t.p0["ic-export"].sum())
+
+        # run_stats["IC import notional shadow price (€/MWh)"] = (
+        #     ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["ic-import"]).sum())
+        #                           / network.links_t.p1["ic-import"].sum())
+        ### LEGACY
+
         run_stats["IC export notional shadow price (€/MWh)"] = (
-            ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["ic-export"]).sum())
-                                  / network.links_t.p0["ic-export"].sum())
+            ((network.buses_t.marginal_price["local-elec-grid"]*network.storageunits_t.p_store["ic"]).sum())
+                                  / network.storageunits_t.p_store["ic"].sum())
 
         run_stats["IC import notional shadow price (€/MWh)"] = (
-            ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p1["ic-import"]).sum())
-                                  / network.links_t.p1["ic-import"].sum())
+            ((network.buses_t.marginal_price["local-elec-grid"]*network.storageunits_t.p_dispatch["ic"]).sum())
+                                  / network.storageunits_t.p_dispatch["ic"].sum())
 
         run_stats["Elec. for DAC notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["DAC"]).sum())
