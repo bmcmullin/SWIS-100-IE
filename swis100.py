@@ -1083,17 +1083,6 @@ def gather_run_stats(run_config, network):
             if (not(g in network.generators_t.p_max_pu.columns)) :
                 network.generators_t.p_max_pu[g] = network.generators.at[g,'p_max_pu']
 
-        # We want timeseries of storage_unit power loss for potential use in power balance plots
-        network.storage_units_t['p_loss'] = -(
-            (network.storage_units_t['p_store']*(1.0-network.storage_units['efficiency_store'])) + 
-            ((network.storage_units_t['p_dispatch']/network.storage_units['efficiency_dispatch'])
-             *(1.0-network.storage_units['efficiency_dispatch'])))
-            # FIXME: Doesn't account for any non-zero standing_loss!
-        network.storage_units['e_loss'] = network.storage_units_t.p_loss.sum() * snapshot_interval
-        network.storage_units['e_transferred'] = (
-            (network.storage_units_t.p_store.sum()+ network.storage_units_t.p_dispatch.sum())
-            * snapshot_interval)
-
         # We want timeseries of link power gain/loss for potential use in power balance plots
         links_net_p = -(network.links_t.p0 + network.links_t.p1)
         network.links_t['p_gain'] = links_net_p.clip(lower=0.0)
@@ -1117,6 +1106,9 @@ def gather_run_stats(run_config, network):
         
         # Summary stats on aggregate "final" energy use, across
         # all pypsa "load" components, plus any "p_load" from "link" components
+        #max_load_p = network.loads_t.p.sum(axis='columns').max()
+        #mean_load_p = network.loads_t.p.sum(axis='columns').mean()
+        #min_load_p = network.loads_t.p.sum(axis='columns').min()
         total_load_p = network.loads_t.p.sum(axis='columns') + network.links_t.p_load.sum(axis='columns')
         max_load_p = total_load_p.max()
         mean_load_p = total_load_p.mean()
@@ -1126,13 +1118,9 @@ def gather_run_stats(run_config, network):
         total_e_available = network.generators['e_avail'].sum()
         total_e_dispatched =  network.generators['e_dispatched'].sum()
         total_generated_e = total_e_dispatched + network.links['e_gain'].sum()
-        total_losses_e = -(network.links['e_loss'].sum() + network.storage_units['e_loss'].sum()) 
+        total_losses_e = -network.links['e_loss'].sum()
         total_consumed_e = total_e_load + total_losses_e
-        total_system_imbalance = (total_generated_e - total_consumed_e)
-        ### DEBUG ONLY
-        logger.info(F"Total system imbalance (MWh)? {total_system_imbalance}")
-        ### DEBUG ONLY
-        # assert(total_system_imbalance < 1.0) # Notional tolerance on system balance, MWh
+        assert((total_generated_e - total_consumed_e) < 1.0) # Notional tolerance on system balance, MWh
         total_e_undispatched = total_e_available - total_e_dispatched 
 
         run_stats["System total load (TWh)"] = total_e_load/1.0e6
@@ -1246,15 +1234,15 @@ def gather_run_stats(run_config, network):
         # run_stats["remote-elec-grid 'store' time (d)"] = remote_elec_grid_h/24.0
 
         # Customised stats for IC StorageUnit
-        ic_p = network.storage_units.p_nom_opt["ic"]
+        ic_p = network.storageunits.p_nom_opt["ic"]
         run_stats["IC power (GW)"] = ic_p/1.0e3
-        ic_e_max = ic_p*network.storage_units.max_hours['ic']
+        ic_e_max = ic_p*network.storageunits.max_hours["ic"]
         run_stats["IC 'store' (TWh)"] = (ic_e_max)/1.0e6
-        ic_total_e_transferred = network.storage_units.at['ic', 'e_transferred'] # On IE grid side
-        run_stats["IC transferred (TWh)"] = ic_total_e_transferred/1.0e6
-        ic_total_e_loss = -network.storage_units.at['ic', 'e_loss']
-        run_stats["IC losses (TWh)"] = ic_total_e_loss/1.0e6
-        run_stats["IC capacity factor (%)"] = (ic_total_e_transferred/(ic_p*total_hours)) *100.0
+        ic_total_e = (
+            (network.storageunits_t.p_store.sum() + network.storageunits_t.p_dispatch.sum())
+            * snapshot_interval) # On IE grid side
+        run_stats["IC transferred (TWh)"] = ic_total_e/1.0e6
+        run_stats["IC capacity factor (%)"] = (ic_total_e/(ic_p*total_hours)) *100.0
         
         # Battery "expected" to be "relatively" small so we represent stats as MW (power) or MWh (energy)
         battery_charge_p = network.links.p_nom_opt["battery charge"]
@@ -1300,13 +1288,8 @@ def gather_run_stats(run_config, network):
         run_stats["H2 store time (OCGT, h)"] = h2_store_OCGT_h 
         run_stats["H2 store time (OCGT, d)"] = h2_store_OCGT_h/24.0
 
-        ### LEGACY
-        # run_stats["System total raw store I+B+H2 (TWh)"] = (
-        #     h2_store_e+battery_store_e+remote_elec_grid_e)/1.0e6
-        ### LEGACY
-        
         run_stats["System total raw store I+B+H2 (TWh)"] = (
-            h2_store_e+battery_store_e+ic_e_max)/1.0e6
+            h2_store_e+battery_store_e+remote_elec_grid_e)/1.0e6
 
         # Do a somewhat crude/ad hoc calculation of how much electricity can be generated
         # from the available storage, based on the efficiencies of the respective
@@ -1426,12 +1409,12 @@ def gather_run_stats(run_config, network):
         ### LEGACY
 
         run_stats["IC export notional shadow price (€/MWh)"] = (
-            ((network.buses_t.marginal_price["local-elec-grid"]*network.storage_units_t.p_store["ic"]).sum())
-                                  / network.storage_units_t.p_store["ic"].sum())
+            ((network.buses_t.marginal_price["local-elec-grid"]*network.storageunits_t.p_store["ic"]).sum())
+                                  / network.storageunits_t.p_store["ic"].sum())
 
         run_stats["IC import notional shadow price (€/MWh)"] = (
-            ((network.buses_t.marginal_price["local-elec-grid"]*network.storage_units_t.p_dispatch["ic"]).sum())
-                                  / network.storage_units_t.p_dispatch["ic"].sum())
+            ((network.buses_t.marginal_price["local-elec-grid"]*network.storageunits_t.p_dispatch["ic"]).sum())
+                                  / network.storageunits_t.p_dispatch["ic"].sum())
 
         run_stats["Elec. for DAC notional shadow price (€/MWh)"] = (
             ((network.buses_t.marginal_price["local-elec-grid"]*network.links_t.p0["DAC"]).sum())
