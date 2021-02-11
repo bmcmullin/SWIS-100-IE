@@ -284,7 +284,9 @@ transport_load_data_raw = pd.read_excel(
     transport_load_data_url,
     sheet_name=transport_load_data_sheet,
     index_col=0)['Transport':'Unspecified']
-transport_load_data_raw = transport_load_data_raw.drop(columns='NACE').transpose()
+# LEGACY: transport_load_data_raw = transport_load_data_raw.drop(columns='NACE').transpose()
+# Filter out any columns not representing a year (four digits)
+transport_load_data_raw = transport_load_data_raw.filter(regex='^[0-9]{4}$').transpose()
 transport_load_data_raw.index=pd.to_datetime(transport_load_data_raw.index,format="%Y")
 transport_load_data_raw.index = transport_load_data_raw.index+timedelta(hours=(365.0*12.0))
         # anchor at mid-year (for later interpolation across years)
