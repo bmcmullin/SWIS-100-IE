@@ -57,7 +57,6 @@ config_converters = {
     'constant_air_transport_load_flag' : bool,
     'elec_load_scope' : str,
     'elec_load_year_start' : int,
-    'heat_load_year_start' : int,
     'heat_year_start' : int,
     'nuclear_SMR_max_p (GW)' : float,
     'nuclear_SMR_min_p (GW)' : float,
@@ -785,8 +784,17 @@ def solve_network(run_config):
             # just use a single, crude, fleet wide, conversion
             # efficiency assuming an "average" ICE conversion.
 
+        # Upsample to match snapshots
         surface_transport_load = (
-            surface_transport_load.resample(str(snapshot_interval)+"H").interpolate())
+            surface_transport_load.resample(rule = str(snapshot_interval)+"H",
+                                            origin="start").interpolate())
+            # We need origin="start" because we anchor each
+            # year's data at "mid-year", based on 365 days, which
+            # means *midday* on day 182. origin would default to
+            # *midnight* and there may be no datapoints
+            # co-inciding with that, e.g., if we use an
+            # snapshot_interval of 24H. Specifying origin="start"
+            # makes sure we hit (at least!) the first data point.
         surface_transport_load = (surface_transport_load[
                 ~((surface_transport_load.index.month == 2) & 
                   (surface_transport_load.index.day == 29))])
@@ -850,9 +858,12 @@ def solve_network(run_config):
             # there is no currently credible prospect of dramatic
             # improvements in "tank-to-thrust" aircraft
             # efficiency (e.g., via electrification).
-            
+
+        # Upsample to match snapshots
         air_transport_load = (
-            air_transport_load.resample(str(snapshot_interval)+"H").interpolate())
+            air_transport_load.resample(rule = str(snapshot_interval)+"H",
+                                        origin="start").interpolate())
+            # See comment on surface_transport_load.resample re origin="start"
         air_transport_load = (air_transport_load[
                 ~((air_transport_load.index.month == 2) & 
                   (air_transport_load.index.day == 29))])
