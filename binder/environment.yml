@@ -1,4 +1,4 @@
-name: base
+name: swis
 channels:
   - conda-forge
   - defaults
