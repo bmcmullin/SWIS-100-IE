@@ -1,4 +1,4 @@
-name: swis
+name: base
 channels:
   - conda-forge
   - defaults
@@ -26,4 +26,5 @@ dependencies:
   - odfpy
   - plotly
   - pyppeteer
+  - glpk
 prefix: /home/mcmullib/anaconda3
