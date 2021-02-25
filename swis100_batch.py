@@ -55,7 +55,12 @@ def main(argv):
         logger.info('run_id: '+run_id)
         run_config = batch_configs_dict[run_id]
         network = swis.solve_network(run_config)
-        network.export_to_netcdf(batch_dir+'/'+run_id+'-network.nc') # Comment out if full network object data not to be saved
+        # network.export_to_netcdf(batch_dir+'/'+run_id+'-network.nc')
+            # Uncomment if full network object data should be
+            # saved; but note that SWIS-100-IE does not provide
+            # any pre-built tools to further view or process such
+            # files.
+
         batch_stats[run_id] = swis.gather_run_stats(run_config, network)
 
     #batch_configs.to_excel(batch_dir+'/batch_config.ods')

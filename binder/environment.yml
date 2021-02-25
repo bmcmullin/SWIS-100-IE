@@ -1,10 +1,10 @@
-name: base
+name: swis
 channels:
   - conda-forge
   - defaults
 dependencies:
   - conda
-  - python=3.7
+  - python==3.7
   - conda-env
   - conda-build
   - conda-verify
@@ -27,4 +27,4 @@ dependencies:
   - plotly
   - pyppeteer
   - glpk
-prefix: /home/mcmullib/anaconda3
+prefix: /home/mcmullib/anaconda3/envs/swis
