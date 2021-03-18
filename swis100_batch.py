@@ -8,6 +8,10 @@
 # provided via a single external (currently hard coded) .ods
 # spreadsheet file.
 
+from pathlib import Path
+# Some care needed to ensure path specifications are portable with windoze™ platforms
+# See: https://medium.com/@ageitgey/python-3-quick-tip-the-easy-way-to-deal-with-file-paths-on-windows-mac-and-linux-11
+
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,7 +41,7 @@ def main(argv):
     import pandas as pd
     import swis100 as swis
 
-    batch_configs = pd.read_excel(batch_config_filename,
+    batch_configs = pd.read_excel(Path(batch_config_filename),
                                   header=0,
                                   index_col=0,
                                   sheet_name='swis-config',
@@ -55,16 +59,17 @@ def main(argv):
         logger.info('run_id: '+run_id)
         run_config = batch_configs_dict[run_id]
         network = swis.solve_network(run_config)
-        # network.export_to_netcdf(batch_dir+'/'+run_id+'-network.nc')
-            # Uncomment if full network object data should be
-            # saved; but note that SWIS-100-IE does not provide
+
+        network.export_to_netcdf(Path(batch_dir+'/'+run_id+'-network.nc'))
+            # Comment out if full network object data should NOT be
+            # saved. Note that SWIS-100-IE does not provide
             # any pre-built tools to further view or process such
             # files.
 
         batch_stats[run_id] = swis.gather_run_stats(run_config, network)
 
     #batch_configs.to_excel(batch_dir+'/batch_config.ods')
-    batch_stats.to_excel(batch_dir+'/batch_stats.ods')
+    batch_stats.to_excel(Path(batch_dir+'/batch_stats.ods'))
 
 if __name__ == "__main__":
    main(sys.argv)
