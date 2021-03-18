@@ -7,6 +7,14 @@ logger = logging.getLogger(__name__)
 
 import warnings
 
+from pathlib import Path
+# Some care needed to ensure path specifications are portable with windoze™ platforms
+# See: https://medium.com/@ageitgey/python-3-quick-tip-the-easy-way-to-deal-with-file-paths-on-windows-mac-and-linux-11a072b58d5f
+
+import os
+swis_lib_dir=os.path.dirname(os.path.abspath(__file__)) + '/'
+# See: https://stackoverflow.com/questions/3718657/how-do-you-properly-determine-the-current-script-directory
+
 import pypsa
 
 # Support use of lopf() extra_functionality() [pyomo=False version] 
@@ -131,7 +139,7 @@ logger.info("Reading solar and wind variability (pu) timeseries data (via renewa
 # available!
 
 #rninja_base_url = "https://www.renewables.ninja/static/downloads/"
-r_ninja_base_url = 'ninja/' # Actually already downloaded...
+r_ninja_base_url = swis_lib_dir + 'ninja/' # Actually already downloaded...
 
 #solar_pv_zip_file = 'ninja_europe_pv_v1.1.zip'
 #solar_pv_zip_url = r_ninja_base_url + solar_pv_zip_file
@@ -140,7 +148,7 @@ solar_pv_csv_file = 'ninja_pv_europe_v1.1_sarah.csv'
 solar_pv_csv_url = r_ninja_base_url + solar_pv_csv_file
 
 #read in renewables.ninja solar time series
-solar_pu_raw = pd.read_csv(solar_pv_csv_url,
+solar_pu_raw = pd.read_csv(Path(solar_pv_csv_url),
                            usecols=['time','IE'],
                            index_col='time',
                            parse_dates=True).tz_localize('UTC')
@@ -152,7 +160,7 @@ wind_csv_file = 'ninja_wind_europe_v1.1_current_on-offshore.csv'
 wind_csv_url = r_ninja_base_url + wind_csv_file
 
 #read in renewables.ninja wind time series
-wind_pu_raw = pd.read_csv(wind_csv_url,
+wind_pu_raw = pd.read_csv(Path(wind_csv_url),
                           usecols=['time','IE_ON','IE_OFF'],
                           index_col='time',
                           parse_dates=True).tz_localize('UTC')
@@ -181,7 +189,7 @@ logger.info("Reading electricity demand timeseries data (via eirgrid)")
 # (i.e. uncomment one or the other of the following two statements).
 
 #eirgrid_base_url = "http://www.eirgridgroup.com/site-files/library/EirGrid/"
-eirgrid_base_url = "eirgrid/"
+eirgrid_base_url = swis_lib_dir + "eirgrid/"
 
 # Columns of interest:
 cols = ['DateTime', 'GMT Offset', 'IE Demand', 'NI Demand']
@@ -190,7 +198,7 @@ elec_load_data_raw = pd.DataFrame()
 for base_year in [2014, 2016, 2018] :
     elec_load_data_filename = F"System-Data-Qtr-Hourly-{base_year:4}-{(base_year+1):4}.xlsx"
     elec_load_data_url = eirgrid_base_url + elec_load_data_filename
-    elec_load_data_raw = pd.concat([elec_load_data_raw, pd.read_excel(elec_load_data_url, usecols = cols)], axis=0)
+    elec_load_data_raw = pd.concat([elec_load_data_raw, pd.read_excel(Path(elec_load_data_url), usecols = cols)], axis=0)
 
 elec_load_data_raw = elec_load_data_raw.rename(columns={'IE Demand':'IE', 'NI Demand':'NI'})
 elec_load_data_raw['IE+NI'] = elec_load_data_raw['IE']+elec_load_data_raw['NI']
@@ -278,13 +286,13 @@ logger.info("Loading transport demand annual timeseries data (seai)")
 # (i.e. uncomment one or the other of the following two statements).
 
 #seai_base_url = "https://www.seai.ie/publications/Energy-by-Fuel.xlsx"
-seai_base_url = 'seai/'
+seai_base_url = swis_lib_dir + 'seai/'
 
 transport_load_data_filename = 'Energy-by-Fuel.xlsx'
 transport_load_data_url = seai_base_url + transport_load_data_filename
 transport_load_data_sheet = 'Total'
 transport_load_data_raw = pd.read_excel(
-    transport_load_data_url,
+    Path(transport_load_data_url),
     sheet_name=transport_load_data_sheet,
     index_col=0)['Transport':'Unspecified']
 # LEGACY: transport_load_data_raw = transport_load_data_raw.drop(columns='NACE').transpose()
@@ -316,7 +324,7 @@ logger.info("Loading low temperature (space and water) heating timeseries data (
 # space and water heating: particularly higher temperature
 # industrial process heat requirements...
 
-when2heat_base_url = 'when2heat/'
+when2heat_base_url = swis_lib_dir + 'when2heat/'
 when2heat_data_filename = 'when2heat.csv'
 when2heat_data_url = when2heat_base_url + when2heat_data_filename
 
@@ -325,7 +333,7 @@ usecols = ['utc_timestamp',
            'IE_COP_ASHP_radiator', 'IE_COP_ASHP_water']
 
 when2heat_data = pd.read_csv(
-    when2heat_data_url,
+    Path(when2heat_data_url),
     delimiter=';',
     decimal=',',
     usecols=usecols,
@@ -358,7 +366,7 @@ assert(not when2heat_data.isnull().values.any())
 # processed/refined for each run)
 logger.info("Reading raw technology assumptions data (via assumptions/SWIS.ods)")
 
-assumptions_raw = pd.read_excel('assumptions/SWIS.ods',
+assumptions_raw = pd.read_excel(Path(swis_lib_dir + 'assumptions/SWIS.ods'),
                                 usecols=['technology','year','parameter','value','unit'],
                                 index_col=list(range(3)),
                                 header=0,
