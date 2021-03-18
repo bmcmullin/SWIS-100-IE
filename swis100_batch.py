@@ -69,7 +69,7 @@ def main(argv):
         batch_stats[run_id] = swis.gather_run_stats(run_config, network)
 
     #batch_configs.to_excel(batch_dir+'/batch_config.ods')
-    batch_stats.to_excel(Path(batch_dir+'/batch_stats.ods'))
+    batch_stats.to_excel(Path(batch_dir+'/batch_stats.ods'), sheet_name='swis-stats', engine='odf')
 
 if __name__ == "__main__":
    main(sys.argv)
