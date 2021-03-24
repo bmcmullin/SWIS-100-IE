@@ -424,8 +424,9 @@ def solve_network(run_config):
     weather_year_end = weather_year_start + (Nyears - 1)
     assert(weather_year_end <= 2015)
 
-    solar_pu = solar_pu_raw.resample(str(snapshot_interval)+"H").mean()
-    wind_pu = wind_pu_raw.resample(str(snapshot_interval)+"H").mean()
+    solar_pu = solar_pu_raw.resample(str(snapshot_interval)+"H").mean().fillna(0.0)
+    wind_pu = wind_pu_raw.resample(str(snapshot_interval)+"H").mean().fillna(0.0)
+
     # All this (re-)sampling may be a bit inefficient if doing multiple runs with the 
     # same snapshot_interval; but for the moment at least, we don't try to optimise around that
     # (e.g. by caching resampled timeseries for later use...)
@@ -457,9 +458,11 @@ def solve_network(run_config):
     snapshots_df = pd.date_range("{}-01-01".format(weather_year_start),
                               "{}-12-31 23:00".format(weather_year_end),
                               freq=str(snapshot_interval)+"H", tz='UTC').to_frame()
+    assert(not(snapshots_df.isnull().values.any()))
 
     # Filter out leap days...
     snapshots = snapshots_df[~((snapshots_df.index.month == 2) & (snapshots_df.index.day == 29))].index
+    assert(not(snapshots.isnull().any()))
 
     #print(snapshots)
     
@@ -920,6 +923,7 @@ def solve_network(run_config):
     # Necessary because we want to be able to combine arbitrary load years with
     # arbitrary weather years...
     assert(len(lo_temp_heat_data.index) == snapshots.size)
+    assert(not lo_temp_heat_data.isnull().values.any())
 
     if (run_config['constant_lo_temp_heat_load_flag']) :
         lo_temp_heat_load = run_config['constant_lo_temp_heat_load (GW)']*1.0e3 # GW -> MW
@@ -936,7 +940,7 @@ def solve_network(run_config):
                 p_nom_extendable=True,
                 p_nom_min = run_config['ASHP_min_p (GW)']*1e3, # GW -> MW
                 p_nom_max = run_config['ASHP_max_p (GW)']*1e3, # GW -> MW
-                efficiency= lo_temp_heat_data['IE_COP_ASHP'],
+                efficiency= lo_temp_heat_data['IE_COP_ASHP'].values,
                     # NB: generally > 1.0, indicating tacit harvest of environmental heat energy
                 capital_cost=assumptions.at["ASHP","fixed"])
 
