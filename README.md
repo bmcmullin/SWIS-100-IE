@@ -7,7 +7,10 @@
   Research, Development and Demonstration
   Programme](https://www.seai.ie/grants/research-funding/research-development-and-demonstration-fund/),
   award reference SEAI RDD/00246 2018.
-- **Author:** Barry McMullin, barry.mcmullin@dcu.ie
+- **Contributors:** 
+    - Barry McMullin barry.mcmullin@dcu.ie
+	- James Carton james.carton@dcu.ie
+	- Iftekhar Hussain cmiftekhar.h@gmail.com
 - **Release:** Pre-release (initial development)
 - **© 2021:** [Dublin City University](http://www.dcu.ie/) (unless indicated otherwise)
 - **Licence:** [GNU GENERAL PUBLIC LICENSE Version 3](https://www.gnu.org/licenses/gpl-3.0.en.html)
