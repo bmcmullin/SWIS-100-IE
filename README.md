@@ -12,13 +12,14 @@
 	- James Carton james.carton@dcu.ie
 	- Iftekhar Hussain cmiftekhar.h@gmail.com
 - **Release:** Pre-release (initial development)
-- **© 2021:** [Dublin City University](http://www.dcu.ie/) (unless indicated otherwise)
+- **© 2022:** [Dublin City University](http://www.dcu.ie/) (unless indicated otherwise)
 - **Licence:** [GNU GENERAL PUBLIC LICENSE Version 3](https://www.gnu.org/licenses/gpl-3.0.en.html)
 
 This package is derived from: [Optimal
 Wind+Hydrogen+Other+Battery+Solar (WHOBS) electricity systems for
 European countries](https://github.com/PyPSA/WHOBS)
 
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/bmcmullin/SWIS-100-IE/develop)
 
 ## Motivation
 
@@ -91,7 +92,7 @@ This allows illustration and exploration of the (rough) trade-off between:
 # Licence
 
 Unless indicated otherwise, all code in this repository is
-copyright ©2020 by [Dublin City University](http://www.dcu.ie/).
+copyright ©2022 by [Dublin City University](http://www.dcu.ie/).
 
 This program is free software: you can redistribute it and/or
 modify it under the terms of the GNU General Public License as

@@ -19,4 +19,5 @@ dependencies:
   - ca-certificates
   - certifi
   - openssl
+  - jupyterlab
 prefix: /home/mcmullib/anaconda3/envs/swis-clean
