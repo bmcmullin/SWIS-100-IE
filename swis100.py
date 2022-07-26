@@ -400,7 +400,10 @@ def prepare_assumptions(Nyears=1,usd_to_eur=1/1.2,assumptions_year=2020):
                                       "lifetime" : assumptions.at["default","lifetime"]})
 
     #annualise investment costs, add FOM
-    # (FOM = estimated "Follow On Maintenance", as % of initial capex, per annum?)
+    # FOM = estimated "Fixed Operations and Maintenance", as % of initial capex, per annum
+    # cf. https://www.nrel.gov/analysis/tech-lcoe-documentation.html
+    # In general there is also *variable* operations and maintenance, typically fuel cost; but
+    # for SWIS sources that is generally not applicable and/or neglected (nuclear?)
     assumptions["fixed"] = [(annuity(v["lifetime"],v["discount rate"]) + 
                              v["FOM"]/100.)*v["investment"]*Nyears for i,v in assumptions.iterrows()]
 
