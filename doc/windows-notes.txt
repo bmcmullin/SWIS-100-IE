@@ -1,0 +1,22 @@
+# Informal/preliminary notes on installing/running SWIS-100-IE on MS-Windows
+
++ CBC install on windows is not trivial - even though just one file (cbc.exe) is actually needed!
+https://pypsa.readthedocs.io/en/latest/installation.html#getting-a-solver-for-linear-optimisation
+https://projects.coin-or.org/Cbc#DownloadandInstall
+https://www.coin-or.org/download/binary/CoinAll/
+
++ conda (in the form of miniconda) gives us a full python system
+https://docs.conda.io/en/latest/miniconda.html
+
++ And glpk can be installed with conda!
+https://groups.google.com/g/pypsa/c/07ZjYkxj3ic/m/A6ZNfGF4AAAJ
+conda install -c conda-forge glpk
+
++ binder\environment.yml will drive conda to install everything else needed
+
+(Actually ... surely can include glpk there also?)
+
++ Tailored windows/command.exe postBuild.bat can get the datasets; but needs manual install of wget.exe first (without using wget.exe to get it!)
+
++ But look: curl should be native on Win-10, and can substitute for wget?
+https://techcommunity.microsoft.com/t5/containers/tar-and-curl-come-to-windows/ba-p/382409
