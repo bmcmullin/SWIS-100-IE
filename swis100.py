@@ -1048,7 +1048,9 @@ def gather_run_stats(run_config, network):
         run_stats = pd.Series()
 
         snapshot_interval = run_config['snapshot_interval']
-        total_hours = network.snapshot_weightings.sum()
+        total_hours = network.snapshot_weightings.loc[:,'generators'].sum() 
+            # since pypsa 0.18 snapshot_weightings is a df with three separate weightings (generators, objective, stores);
+            # but the total should be the same for all. <shrug>
 
         # Stash some preliminary data as extra columns in network
         # components. NB: possibly some of this might be better
