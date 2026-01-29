@@ -1,6 +1,5 @@
 *~
 *.png
-*.pdf
 \.~lock*
 # But don't ignore this file
 !.gitignore
