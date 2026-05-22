@@ -18,7 +18,8 @@ swis_lib_dir=os.path.dirname(os.path.abspath(__file__)) + '/'
 import pypsa
 
 # Support use of lopf() extra_functionality() [pyomo=False version] 
-from pypsa.linopt import get_var, linexpr, define_constraints
+# REFACTOR IN PROGRESS: change to native linopy via n.optimize() API
+#from pypsa.linopt import get_var, linexpr, define_constraints
 
 import numpy as np
 import pandas as pd
@@ -148,10 +149,16 @@ solar_pv_csv_file = 'ninja_pv_europe_v1.1_sarah.csv'
 solar_pv_csv_url = r_ninja_base_url + solar_pv_csv_file
 
 #read in renewables.ninja solar time series
+### REFACTOR IN PROGRESS FOR pypsa 1.x
+# pypsa now insists on timezone naive snapshots?
+# solar_pu_raw = pd.read_csv(Path(solar_pv_csv_url),
+#                            usecols=['time','IE'],
+#                            index_col='time',
+#                            parse_dates=True).tz_localize('UTC')
 solar_pu_raw = pd.read_csv(Path(solar_pv_csv_url),
                            usecols=['time','IE'],
                            index_col='time',
-                           parse_dates=True).tz_localize('UTC')
+                           parse_dates=True)
 
 #wind_zip_file = 'ninja_europe_wind_v1.1.zip'
 #wind_zip_url = r_ninja_base_url + wind_zip_file
@@ -160,10 +167,16 @@ wind_csv_file = 'ninja_wind_europe_v1.1_current_on-offshore.csv'
 wind_csv_url = r_ninja_base_url + wind_csv_file
 
 #read in renewables.ninja wind time series
+### REFACTOR IN PROGRESS FOR pypsa 1.x
+# pypsa now insists on timezone naive snapshots?
+# wind_pu_raw = pd.read_csv(Path(wind_csv_url),
+#                           usecols=['time','IE_ON','IE_OFF'],
+#                           index_col='time',
+#                           parse_dates=True).tz_localize('UTC')
 wind_pu_raw = pd.read_csv(Path(wind_csv_url),
                           usecols=['time','IE_ON','IE_OFF'],
                           index_col='time',
-                          parse_dates=True).tz_localize('UTC')
+                          parse_dates=True)
 
 # ### IE/NI electricity load (demand) data
 logger.info("Reading electricity demand timeseries data (via eirgrid)")
@@ -213,6 +226,10 @@ elec_load_data_raw['IE+NI'] = elec_load_data_raw['IE']+elec_load_data_raw['NI']
 # UTC (and explicitly having the UTC timezone). We can then
 # dispense with the `GMT Offset` column as it is redundant.
 
+### REFACTOR IN PROGRESS FOR pypsa 1.x
+# pypsa now insists on timezone naive snapshots?
+# So we do still correct localtime to UTC but coerce to tz naive rather
+# than explicitly UTC...
 def tz_fix(row):
   try:
     naive_timestamp = row['DateTime']
@@ -220,7 +237,8 @@ def tz_fix(row):
     utc_timestamp = naive_timestamp - timedelta(hours=float(gmt_offset))
         # float() conversion required for timedelta() argument!
         # Must SUBTRACT the GMT Offset to get GMT/UTC
-    row['DateTime'] = utc_timestamp.tz_localize('UTC')
+#    row['DateTime'] = utc_timestamp.tz_localize('UTC')
+    row['DateTime'] = utc_timestamp
   except Exception as inst:
     print(F"Exception:\n {row}")
     print(inst)
@@ -427,8 +445,8 @@ def solve_network(run_config):
     weather_year_end = weather_year_start + (Nyears - 1)
     assert(weather_year_end <= 2015)
 
-    solar_pu = solar_pu_raw.resample(str(snapshot_interval)+"H").mean().fillna(0.0)
-    wind_pu = wind_pu_raw.resample(str(snapshot_interval)+"H").mean().fillna(0.0)
+    solar_pu = solar_pu_raw.resample(str(snapshot_interval)+"h").mean().fillna(0.0)
+    wind_pu = wind_pu_raw.resample(str(snapshot_interval)+"h").mean().fillna(0.0)
 
     # All this (re-)sampling may be a bit inefficient if doing multiple runs with the 
     # same snapshot_interval; but for the moment at least, we don't try to optimise around that
@@ -438,8 +456,8 @@ def solve_network(run_config):
     # of this resampling and leap-day filtering: vague memory of seeing that at some point. 
     # But don't currently have a test case demonstrating this... caveat modeller
     
-    # Could just skip resampling and just let pypsa sub-sample
-    # (within lopf()); though note that this will no longer be
+    # Could skip resampling and just let pypsa sub-sample
+    # (within n.optimize()?); though note that this will no longer be
     # expected to exactly match overall average reseource pu
     # availability. But if such subsampling is preferred,
     # uncomment:
@@ -447,20 +465,34 @@ def solve_network(run_config):
     #solar_pu = solar_pu_raw
     #wind_pu = wind_pu_raw
 
-    # Configure Links to have multiple outputs by overriding the
-    # component_attrs. This can be done for as many buses as you
-    # need with format busi for i = 2,3,4,5,....  See
-    # https://pypsa.org/doc/components.html#link-with-multiple-outputs-or-inputs
-    override_component_attrs = pypsa.descriptors.Dict({k : v.copy() for k,v in pypsa.components.component_attrs.items()})
-    override_component_attrs["Link"].loc["bus2"] = ["string",np.nan,np.nan,"2nd bus","Input (optional)"]
-    override_component_attrs["Link"].loc["efficiency2"] = ["static or series","per unit",1.,"2nd bus efficiency","Input (optional)"]
-    override_component_attrs["Link"].loc["p2"] = ["series","MW",0.,"2nd bus output","Output"]
     
-    network = pypsa.Network(override_component_attrs=override_component_attrs)
+    ### LEGACY/DEFUNCT! REFACTOR IN PROGRESS FOR pypsa 1.x
+    ## cf. https://docs.pypsa.org/v0.34.0/references/release-notes.html
+    ## "Breaking: Deprecation of custom components"
+    ## Seems that this explicit fix for multiple outputs on Links
+    ## is simply no longer needed?
+    
+    # # Configure Links to have multiple outputs by overriding the
+    # # component_attrs. This can be done for as many buses as you
+    # # need with format busi for i = 2,3,4,5,....  See
+    # # https://pypsa.org/doc/components.html#link-with-multiple-outputs-or-inputs
+    # override_component_attrs = pypsa.descriptors.Dict({k : v.copy() for k,v in pypsa.components.component_attrs.items()})
+    # override_component_attrs["Link"].loc["bus2"] = ["string",np.nan,np.nan,"2nd bus","Input (optional)"]
+    # override_component_attrs["Link"].loc["efficiency2"] = ["static or series","per unit",1.,"2nd bus efficiency","Input (optional)"]
+    # override_component_attrs["Link"].loc["p2"] = ["series","MW",0.,"2nd bus output","Output"]
+    
+    # network = pypsa.Network(override_component_attrs=override_component_attrs)
 
+    network = pypsa.Network()
+
+    ### REFACTOR IN PROGRESS FOR pypsa 1.x
+    # pypsa now insists on timezone naive snapshots?
+    # snapshots_df = pd.date_range("{}-01-01".format(weather_year_start),
+    #                           "{}-12-31 23:00".format(weather_year_end),
+    #                           freq=str(snapshot_interval)+"h", tz='UTC').to_frame()
     snapshots_df = pd.date_range("{}-01-01".format(weather_year_start),
                               "{}-12-31 23:00".format(weather_year_end),
-                              freq=str(snapshot_interval)+"H", tz='UTC').to_frame()
+                              freq=str(snapshot_interval)+"h").to_frame()
     assert(not(snapshots_df.isnull().values.any()))
 
     # Filter out leap days...
@@ -468,8 +500,11 @@ def solve_network(run_config):
     assert(not(snapshots.isnull().any()))
 
     #print(snapshots)
+
+    # DEBUG ONLY: EXPERIMENTAL - REMOVE!!
+    #from IPython import embed; embed()
     
-    network.set_snapshots(snapshots)
+    network.set_snapshots(snapshots.values)
 
     network.snapshot_weightings = pd.Series(float(snapshot_interval),index=network.snapshots)
 
@@ -489,7 +524,7 @@ def solve_network(run_config):
         elec_load_date_end = "{}-12-31 23:59".format(elec_load_year_end)
         elec_load_scope = run_config['elec_load_scope']
         elec_load = elec_load_data_raw.loc[elec_load_date_start:elec_load_date_end, elec_load_scope]
-        elec_load = elec_load.resample(str(snapshot_interval)+"H").mean()
+        elec_load = elec_load.resample(str(snapshot_interval)+"h").mean()
 
         elec_load = elec_load[~((elec_load.index.month == 2) & (elec_load.index.day == 29))]
         # Kludge to filter out "leap days" (29th Feb in any year)
@@ -520,7 +555,7 @@ def solve_network(run_config):
        
     network.add("Generator","solar",
                 bus="local-elec-grid",
-                p_max_pu = solar_pu["IE"], # Hardwired choice of IE location for renewables.ninja
+                p_max_pu = solar_pu.loc[snapshots,"IE"], # Hardwired choice of IE location for renewables.ninja
                 p_nom_extendable = True,
                 p_nom_min = run_config['solar_min_p (GW)']*1e3, #GW -> MW
                 p_nom_max = run_config['solar_max_p (GW)']*1e3, #GW -> MW
@@ -531,7 +566,7 @@ def solve_network(run_config):
 
     network.add("Generator","onshore wind",
                 bus="local-elec-grid",
-                p_max_pu = wind_pu["IE_ON"], 
+                p_max_pu = wind_pu.loc[snapshots,"IE_ON"], 
                     # Hardwired choice of IE location for renewables.ninja
                     # "_ON" codes for "onshore" in renewables.ninja wind data
                 p_nom_extendable = True,
@@ -543,7 +578,7 @@ def solve_network(run_config):
 
     network.add("Generator","offshore wind",
                 bus="local-elec-grid",
-                p_max_pu = wind_pu["IE_OFF"], 
+                p_max_pu = wind_pu.loc[snapshots,"IE_OFF"], 
                     # Hardwired choice of IE location for renewables.ninja
                     # "_OFF" codes for "onshore" in renewables.ninja wind data
                 p_nom_extendable = True,
@@ -804,7 +839,7 @@ def solve_network(run_config):
 
         # Upsample to match snapshots
         surface_transport_load = (
-            surface_transport_load.resample(rule = str(snapshot_interval)+"H",
+            surface_transport_load.resample(rule = str(snapshot_interval)+"h",
                                             origin="start").interpolate())
             # We need origin="start" because we anchor each
             # year's data at "mid-year", based on 365 days, which
@@ -879,7 +914,7 @@ def solve_network(run_config):
 
         # Upsample to match snapshots
         air_transport_load = (
-            air_transport_load.resample(rule = str(snapshot_interval)+"H",
+            air_transport_load.resample(rule = str(snapshot_interval)+"h",
                                         origin="start").interpolate())
             # See comment on surface_transport_load.resample re origin="start"
         air_transport_load = (air_transport_load[
@@ -919,7 +954,7 @@ def solve_network(run_config):
     lo_temp_heat_load_date_start = "{}-01-01 00:00".format(lo_temp_heat_year_start)
     lo_temp_heat_load_date_end = "{}-12-31 23:59".format(lo_temp_heat_year_end)
     lo_temp_heat_data = when2heat_data.loc[lo_temp_heat_load_date_start:lo_temp_heat_load_date_end, ]
-    lo_temp_heat_data = lo_temp_heat_data.resample(str(snapshot_interval)+"H").mean()
+    lo_temp_heat_data = lo_temp_heat_data.resample(str(snapshot_interval)+"h").mean()
     lo_temp_heat_data = lo_temp_heat_data[~((lo_temp_heat_data.index.month == 2) & (lo_temp_heat_data.index.day == 29))]
     # Kludge to filter out "leap days" (29th Feb in any year)
     # https://stackoverflow.com/questions/34966422/remove-leap-year-day-from-pandas-dataframe
@@ -969,50 +1004,50 @@ def solve_network(run_config):
                 efficiency = assumptions.at["H2 boiler","efficiency"],
                 capital_cost = assumptions.at["H2 boiler","fixed"])
 
+    ## LEGACY/DEFUNCT! REFACTOR IN PROGRESS FOR NATIVE linopy
     # Custom constraints:
     
-    def extra_functionality(network,snapshots):
-        link_p_nom = get_var(network, "Link", "p_nom")
+    # def extra_functionality(network,snapshots):
+    #     link_p_nom = get_var(network, "Link", "p_nom")
 
-        # Interconnector import and export links are constrained so that rated power capacity at the 
-        # *input* side (p0) is equal for both directions; so max available *output* power (p1) will 
-        # be less, in both directions, via the configured efficiency.
-        lhs = linexpr((1.0, link_p_nom["ic-export"]),
-                       (-1.0, link_p_nom["ic-import"]))
-        define_constraints(network, lhs, "=", 0.0, 'Link', 'ic_ratio')
+    #     # Interconnector import and export links are constrained so that rated power capacity at the 
+    #     # *input* side (p0) is equal for both directions; so max available *output* power (p1) will 
+    #     # be less, in both directions, via the configured efficiency.
+    #     lhs = linexpr((1.0, link_p_nom["ic-export"]),
+    #                    (-1.0, link_p_nom["ic-import"]))
+    #     define_constraints(network, lhs, "=", 0.0, 'Link', 'ic_ratio')
 
-        # Battery charge and discharge links are constrained so that rated power capacity at the 
-        # network/grid bus (as opposed to the store bus) is equal for both charge and discharge.
-        # (The implies that the rated power on the *input* side of the *discharge* link will be
-        # correspondingly higher, via the configured efficiency.)
-        lhs = linexpr((1.0,link_p_nom["battery charge"]),
-                      (-network.links.loc["battery discharge", "efficiency"],
-                       link_p_nom["battery discharge"]))
-        define_constraints(network, lhs, "=", 0.0, 'Link', 'battery_charger_ratio')
+    #     # Battery charge and discharge links are constrained so that rated power capacity at the 
+    #     # network/grid bus (as opposed to the store bus) is equal for both charge and discharge.
+    #     # (The implies that the rated power on the *input* side of the *discharge* link will be
+    #     # correspondingly higher, via the configured efficiency.)
+    #     lhs = linexpr((1.0,link_p_nom["battery charge"]),
+    #                   (-network.links.loc["battery discharge", "efficiency"],
+    #                    link_p_nom["battery discharge"]))
+    #     define_constraints(network, lhs, "=", 0.0, 'Link', 'battery_charger_ratio')
 
-        # Atmospheric CO2 constraint
-        delta_CO2_atm_max = run_config['delta_CO2_atm_max (MtCO2)']*1e6 # MtCO2 -> t
-        atm_CO2_store_e = get_var(network, "Store", "e")["CO2_atm_store"].iloc[-1]
-            # Scalar var: *final* value of e for CO2_atm_store
-        lhs = linexpr((1.0, atm_CO2_store_e))
-        define_constraints(network, lhs, "<=", delta_CO2_atm_max, 'Store', 'delta CO2 atm (max)')
+    #     # Atmospheric CO2 constraint
+    #     delta_CO2_atm_max = run_config['delta_CO2_atm_max (MtCO2)']*1e6 # MtCO2 -> t
+    #     atm_CO2_store_e = get_var(network, "Store", "e")["CO2_atm_store"].iloc[-1]
+    #         # Scalar var: *final* value of e for CO2_atm_store
+    #     lhs = linexpr((1.0, atm_CO2_store_e))
+    #     define_constraints(network, lhs, "<=", delta_CO2_atm_max, 'Store', 'delta CO2 atm (max)')
         
-        # ## DEFUNCT: legacy representation of harvest of
-        # environmental heat energy via an explicit Generator.
-        # ASHP Link and ASHP_RE Generator are coupled together so
-        # that the amount of environmental heat "pumped" is
-        # determined by the amount of electricity flowing into
-        # the ASHP link modulo the (snapshot-specific) COP, here
-        # coded via the series ashp_RE_factor.
+    #     # ## DEFUNCT: legacy representation of harvest of
+    #     # environmental heat energy via an explicit Generator.
+    #     # ASHP Link and ASHP_RE Generator are coupled together so
+    #     # that the amount of environmental heat "pumped" is
+    #     # determined by the amount of electricity flowing into
+    #     # the ASHP link modulo the (snapshot-specific) COP, here
+    #     # coded via the series ashp_RE_factor.
         
-        # ashp_cop = network.links.at['ASHP','COP']
-        # link_p = get_var(network, "Link", "p")
-        # gen_p = get_var(network, "Generator", "p")
+    #     # ashp_cop = network.links.at['ASHP','COP']
+    #     # link_p = get_var(network, "Link", "p")
+    #     # gen_p = get_var(network, "Generator", "p")
 
-        # lhs = linexpr(((ashp_cop - 1.0), link_p["ASHP"]),
-        #               (-1.0, gen_p["ASHP_RE"]))
-        # define_constraints(network, lhs, "=", 0.0, 'Link', 'ASHP RE')
-
+    #     # lhs = linexpr(((ashp_cop - 1.0), link_p["ASHP"]),
+    #     #               (-1.0, gen_p["ASHP_RE"]))
+    #     # define_constraints(network, lhs, "=", 0.0, 'Link', 'ASHP RE')
       
     if solver_name == "gurobi":
         solver_options = {"threads" : 4,
@@ -1023,13 +1058,25 @@ def solve_network(run_config):
     else:
         solver_options = {}
 
+    network.sanitize()
+    # DEBUG ONLY: EXPERIMENTAL - REMOVE!!
+    #from IPython import embed; embed()
+    
     network.consistency_check()
+    # DEBUG ONLY: EXPERIMENTAL - REMOVE!!
+    #from IPython import embed; embed()
+    
 
-    network.lopf(solver_name=run_config['solver_name'],
-                  solver_options=solver_options,
-                  pyomo=False,
-                  extra_functionality=extra_functionality)
+  ## LEGACY/DEFUNCT! REFACTOR IN PROGRESS FOR NATIVE linopy
+    # network.lopf(solver_name=run_config['solver_name'],
+    #               solver_options=solver_options,
+    #               pyomo=False,
+    #               extra_functionality=extra_functionality)
 
+    # REFACTOR IN PROGRESS: no custom constraints yet!
+    network.optimize(solver_name=run_config['solver_name'],
+                     solver_options=solver_options)
+    
     return network
 
 
