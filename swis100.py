@@ -430,7 +430,7 @@ def prepare_assumptions(Nyears=1,usd_to_eur=1/1.2,assumptions_year=2020):
 def solve_network(run_config):
 
     snapshot_interval = int(run_config['snapshot_interval'])
-    solver_name = bool(run_config['solver_name'])
+    solver_name = run_config['solver_name']
     Nyears = int(run_config['Nyears'])
     assumptions_year = int(run_config['assumptions_year'])
     assert (assumptions_year in [2020, 2030, 2050])
@@ -504,6 +504,10 @@ def solve_network(run_config):
     # DEBUG ONLY: EXPERIMENTAL - REMOVE!!
     #from IPython import embed; embed()
     
+    # DEBUG ONLY: EXPERIMENTAL - REMOVE!!
+    # Override snapshots with simple numeric sequence
+    #snapshots = pd.Series(range(365*24))
+
     network.set_snapshots(snapshots.values)
 
     network.snapshot_weightings = pd.Series(float(snapshot_interval),index=network.snapshots)
@@ -1004,9 +1008,9 @@ def solve_network(run_config):
                 efficiency = assumptions.at["H2 boiler","efficiency"],
                 capital_cost = assumptions.at["H2 boiler","fixed"])
 
-    ## LEGACY/DEFUNCT! REFACTOR IN PROGRESS FOR NATIVE linopy
+    # # LEGACY/DEFUNCT! REFACTOR IN PROGRESS FOR NATIVE linopy
     # Custom constraints:
-    
+
     # def extra_functionality(network,snapshots):
     #     link_p_nom = get_var(network, "Link", "p_nom")
 
@@ -1047,8 +1051,44 @@ def solve_network(run_config):
 
     #     # lhs = linexpr(((ashp_cop - 1.0), link_p["ASHP"]),
     #     #               (-1.0, gen_p["ASHP_RE"]))
-    #     # define_constraints(network, lhs, "=", 0.0, 'Link', 'ASHP RE')
-      
+    # #     # define_constraints(network, lhs, "=", 0.0, 'Link', 'ASHP RE')
+
+    network.sanitize()    
+    network.consistency_check()
+
+    # Create model object (to be modified with custom constraints)
+    model = network.optimize.create_model()
+
+    ## Add custom constraints
+
+    # Interconnector
+    # Interconnector import and export links are constrained so that
+    # rated power capacity at the *input* side (p0) is equal for both
+    # directions; so max available *output* power (p1) will be less,
+    # in both directions, via the configured efficiency.
+
+    lhs = model.variables["Link-p_nom"].sel(name='ic-export') - model.variables["Link-p_nom"].sel(name='ic-import')
+    model.add_constraints(lhs == 0.0, name="ic_ratio")
+
+    # Battery
+    # Battery charge and discharge links are constrained so that
+    # rated power capacity at the network/grid bus (as opposed to the
+    # store bus) is equal for both charge and discharge.  (The
+    # implies that the rated power on the *input* side of the
+    # *discharge* link will be correspondingly higher, via the
+    # configured efficiency.)
+
+    lhs = (model.variables["Link-p_nom"].sel(name='battery charge') +
+           (-network.links.loc["battery discharge", "efficiency"]) * model.variables["Link-p_nom"].sel(name='battery discharge'))
+    model.add_constraints(lhs == 0.0, name="battery_charger_ratio")
+
+    # Atmospheric CO2 constraint
+    delta_CO2_atm_max = run_config['delta_CO2_atm_max (MtCO2)']*1e6 # MtCO2 -> t
+    snapshot_final = network.snapshots.values[-1]
+    atm_CO2_store_e_final = model.variables["Store-e"].sel(name='CO2_atm_store',snapshot=snapshot_final)
+        # Scalar var: *final* snapshot value of e for CO2_atm_store
+    model.add_constraints(atm_CO2_store_e_final <= delta_CO2_atm_max, name='delta_CO2_atm')
+    
     if solver_name == "gurobi":
         solver_options = {"threads" : 4,
                           "method" : 2,
@@ -1058,23 +1098,15 @@ def solve_network(run_config):
     else:
         solver_options = {}
 
-    network.sanitize()
-    # DEBUG ONLY: EXPERIMENTAL - REMOVE!!
-    #from IPython import embed; embed()
-    
-    network.consistency_check()
-    # DEBUG ONLY: EXPERIMENTAL - REMOVE!!
-    #from IPython import embed; embed()
-    
 
-  ## LEGACY/DEFUNCT! REFACTOR IN PROGRESS FOR NATIVE linopy
+  ## LEGACY/DEFUNCT! REFACTORED FOR NATIVE linopy
     # network.lopf(solver_name=run_config['solver_name'],
     #               solver_options=solver_options,
     #               pyomo=False,
     #               extra_functionality=extra_functionality)
 
-    # REFACTOR IN PROGRESS: no custom constraints yet!
-    network.optimize(solver_name=run_config['solver_name'],
+    # Solve/optimise
+    network.optimize.solve_model(solver_name=run_config['solver_name'],
                      solver_options=solver_options)
     
     return network
